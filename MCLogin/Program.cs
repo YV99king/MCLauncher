@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Linq;
 
 namespace MCLogin;
 
@@ -7,6 +6,8 @@ public static class Program
 {
 	public static void Main()
 	{
-		var tmp = new Login("yairvilner@gmail.com", "hthrhthr11");
+        Console.Write("username: "); var username =  Console.ReadLine();
+        Console.Write("password: "); var password = Console.ReadLine();
+        var tmp = new Login(username, password);
 	}
 }

@@ -1,30 +1,39 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Net.Http;
-using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace MCLogin;
 
-public partial class Login(string email, string password)
+public partial class Login
 {
     private DateTime accessTokenExpiry;
-    private readonly string email = email;
-    private readonly string password = password;
-    private string token = GenerateAccessToken(email, password);
+    private readonly string email;
+    private readonly string password;
+    private string token;
+
+    public Login(string email, string password)
+    {
+        this.email = email;
+        this.password = password;
+        token = GenerateAccessToken(email, password, out accessTokenExpiry);
+    }
 
     public string AccessToken
     {
         get
         {
             if (accessTokenExpiry < DateTime.Now)
-                token = GenerateAccessToken(email, password);
+                token = GenerateAccessToken(email, password, out accessTokenExpiry);
             return token;
         }
     }
+    public string Email => email;
+    public string Password => password;
+    public DateTime AccessTokenExpiry => accessTokenExpiry;
 
-    public static string GenerateAccessToken(string email, string password)
+    public static string GenerateAccessToken(string email, string password, out DateTime accessTokenExpiry)
     {
         using HttpClientHandler handler = new();
         handler.AllowAutoRedirect = true;
@@ -37,9 +46,9 @@ public partial class Login(string email, string password)
         string HSTSToken = GetHSTSToken(client, xboxLiveToken);
         var minecraftLoginInfo = GetMinecraftLoginInfo(client, HSTSToken, xboxLiveUserHash);
         Console.WriteLine(minecraftLoginInfo.RootElement.GetRawText());
+        accessTokenExpiry = DateTime.Now + TimeSpan.FromSeconds(minecraftLoginInfo.RootElement.GetProperty("expires_in").GetInt32());
 
-
-        return "";
+        return minecraftLoginInfo.RootElement.GetProperty("access_token").GetString();
     }
     private static (string sFTTag, string urlPost) GetPPFTAndUrlPost(HttpClient client)
     {
@@ -140,5 +149,4 @@ public partial class Login(string email, string password)
 
         return JsonDocument.Parse(response.Content.ReadAsStringAsync().Result);
     }
-
 }
