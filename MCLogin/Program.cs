@@ -8,6 +8,6 @@ public static class Program
 	{
         Console.Write("username: "); var username =  Console.ReadLine();
         Console.Write("password: "); var password = Console.ReadLine();
-        var tmp = new Login(username, password);
-	}
+        _ = new Login(username, password);
+    }
 }

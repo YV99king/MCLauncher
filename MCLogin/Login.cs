@@ -41,13 +41,11 @@ public partial class Login
         client.BaseAddress = null;
 
         (string sFTTag, string urlPost) = GetPPFTAndUrlPost(client);
-        string msAccessToken = GetMSLoginInfo(client, password, email, sFTTag, urlPost)["access_token"];
-        (string xboxLiveToken, int xboxLiveUserHash) = GetXboxLiveLogin(client, msAccessToken);
+        string msAccessToken = GetMSLoginInfo(client, email, password, sFTTag, urlPost)["access_token"];
+        (string xboxLiveToken, long xboxLiveUserHash) = GetXboxLiveLogin(client, msAccessToken);
         string HSTSToken = GetHSTSToken(client, xboxLiveToken);
         var minecraftLoginInfo = GetMinecraftLoginInfo(client, HSTSToken, xboxLiveUserHash);
-        Console.WriteLine(minecraftLoginInfo.RootElement.GetRawText());
         accessTokenExpiry = DateTime.Now + TimeSpan.FromSeconds(minecraftLoginInfo.RootElement.GetProperty("expires_in").GetInt32());
-
         return minecraftLoginInfo.RootElement.GetProperty("access_token").GetString();
     }
     private static (string sFTTag, string urlPost) GetPPFTAndUrlPost(HttpClient client)
@@ -76,7 +74,6 @@ public partial class Login
             })
         };
         var response = client.Send(request);
-        Console.WriteLine(response);
 
         var msLoginInfo = new Dictionary<string, string>();
         foreach (var item in response.RequestMessage.RequestUri.OriginalString.Split('#')[1].Split('&'))
@@ -89,7 +86,7 @@ public partial class Login
 
         return msLoginInfo;
     }
-    private static (string xboxLiveToken, int xboxLiveUserHash) GetXboxLiveLogin(HttpClient client, string msAccessToken)
+    private static (string xboxLiveToken, long xboxLiveUserHash) GetXboxLiveLogin(HttpClient client, string msAccessToken)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "https://user.auth.xboxlive.com/user/authenticate");
         request.Headers.Add("Accept", "application/json");
@@ -110,7 +107,7 @@ public partial class Login
             throw new Exception("xboxlive login failed");//TODO: implemnt error system
         var xboxLiveLoginJson = JsonDocument.Parse(response.Content.ReadAsStringAsync().Result);
         string xboxLiveToken = xboxLiveLoginJson.RootElement.GetProperty("Token").GetString();
-        int xboxLiveUserHash = xboxLiveLoginJson.RootElement.GetProperty("DisplayClaims").GetProperty("xui")[0].GetProperty("uhs").GetInt32();
+        long xboxLiveUserHash = Convert.ToInt64(xboxLiveLoginJson.RootElement.GetProperty("DisplayClaims").GetProperty("xui")[0].GetProperty("uhs").GetString());
         return (xboxLiveToken, xboxLiveUserHash);
     }
     private static string GetHSTSToken(HttpClient client, string xboxLiveToken)
@@ -134,7 +131,7 @@ public partial class Login
         var xboxLiveHSTSJson = JsonDocument.Parse(response.Content.ReadAsStringAsync().Result);
         return xboxLiveHSTSJson.RootElement.GetProperty("Token").GetString();
     }
-    private static JsonDocument GetMinecraftLoginInfo(HttpClient client, string HSTSToken, int xboxLiveUserHash)
+    private static JsonDocument GetMinecraftLoginInfo(HttpClient client, string HSTSToken, long xboxLiveUserHash)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "https://api.minecraftservices.com/authentication/login_with_xbox")
         {
