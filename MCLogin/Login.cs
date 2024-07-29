@@ -9,20 +9,13 @@ namespace MCLauncher;
 
 public partial class Login
 {
-    private static readonly HttpClient _client;
+    private readonly HttpClient _client;
 
     private DateTime accessTokenExpiry;
     private readonly string email;
     private readonly string password;
     private string token;
 
-    static Login()
-    {
-        using HttpClientHandler handler = new();
-        handler.AllowAutoRedirect = true;
-        using HttpClient _client = new(handler);
-        _client.BaseAddress = null;
-    }
     /// <summary>
     /// Initializes a new instance of the <see cref="Login"/> class
     /// </summary>
@@ -30,6 +23,12 @@ public partial class Login
     /// <param name="password">the password of the account</param>
     public Login(string email, string password)
     {
+        HttpClientHandler handler = new()
+        {
+            AllowAutoRedirect = true
+        };
+        _client = new(handler);
+
         this.email = email;
         this.password = password;
         token = GenerateAccessToken(email, password, out accessTokenExpiry);
@@ -67,7 +66,7 @@ public partial class Login
     /// <param name="password">the accaunt's password</param>
     /// <param name="accessTokenExpiry">where to save the bearer token's expiry date</param>
     /// <returns>minecraft bearer token</returns>
-    public static string GenerateAccessToken(string email, string password, out DateTime accessTokenExpiry)
+    public string GenerateAccessToken(string email, string password, out DateTime accessTokenExpiry)
     {
         (string sFTTag, string urlPost) = GetPPFTAndUrlPost();
         string msAccessToken = GetMSLoginInfo(email, password, sFTTag, urlPost)["access_token"];
@@ -77,10 +76,11 @@ public partial class Login
         accessTokenExpiry = DateTime.Now + TimeSpan.FromSeconds(minecraftLoginInfo.RootElement.GetProperty("expires_in").GetInt32());
         return minecraftLoginInfo.RootElement.GetProperty("access_token").GetString();
     }
-    private static (string sFTTag, string urlPost) GetPPFTAndUrlPost()
+    private (string sFTTag, string urlPost) GetPPFTAndUrlPost()
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "https://login.live.com/oauth20_authorize.srf?client_id=000000004C12AE6F&redirect_uri=https://login.live.com/oauth20_desktop.srf&scope=service::user.auth.xboxlive.com::MBI_SSL&display=touch&response_type=token&locale=en");
-        var response = _client.Send(request).Content.ReadAsStringAsync().Result;
+        var response1 = _client.Send(request);
+        var response = response1.Content.ReadAsStringAsync().Result;
 
         string sFTTag = GetPPFTValueRegex().Match(response).Value.Replace("value=", "").Trim('"');
         string urlPost = getUrlPostRegex().Match(response).Value.Replace("urlPost:", "").Trim('\'');
@@ -90,7 +90,7 @@ public partial class Login
     private static partial Regex GetPPFTValueRegex();
     [GeneratedRegex("urlPost:'(.+?)'")]
     private static partial Regex getUrlPostRegex();
-    private static Dictionary<string, string> GetMSLoginInfo(string email, string password, string sFTTag, string urlPost)
+    private Dictionary<string, string> GetMSLoginInfo(string email, string password, string sFTTag, string urlPost)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, urlPost)
         {
@@ -115,7 +115,7 @@ public partial class Login
 
         return msLoginInfo;
     }
-    private static (string xboxLiveToken, ulong xboxLiveUserHash) GetXboxLiveLogin(string msAccessToken)
+    private (string xboxLiveToken, ulong xboxLiveUserHash) GetXboxLiveLogin(string msAccessToken)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "https://user.auth.xboxlive.com/user/authenticate");
         request.Headers.Add("Accept", "application/json");
@@ -139,7 +139,7 @@ public partial class Login
         ulong xboxLiveUserHash = Convert.ToUInt64(xboxLiveLoginJson.RootElement.GetProperty("DisplayClaims").GetProperty("xui")[0].GetProperty("uhs").GetString());
         return (xboxLiveToken, xboxLiveUserHash);
     }
-    private static string GetHSTSToken(string xboxLiveToken)
+    private string GetHSTSToken(string xboxLiveToken)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "https://xsts.auth.xboxlive.com/xsts/authorize");
         request.Headers.Add("Accept", "application/json");
@@ -160,7 +160,7 @@ public partial class Login
         var xboxLiveHSTSJson = JsonDocument.Parse(response.Content.ReadAsStringAsync().Result);
         return xboxLiveHSTSJson.RootElement.GetProperty("Token").GetString();
     }
-    private static JsonDocument GetMinecraftLoginInfo(string HSTSToken, ulong xboxLiveUserHash)
+    private JsonDocument GetMinecraftLoginInfo(string HSTSToken, ulong xboxLiveUserHash)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "https://api.minecraftservices.com/authentication/login_with_xbox")
         {
@@ -227,19 +227,4 @@ public partial class Login
         }
         _client.Send(request);
     }
-}
-
-/// <summary>
-/// specifies a skin type
-/// </summary>
-public enum SkinType
-{
-    /// <summary>
-    /// generic skin (steve)
-    /// </summary>
-    classic = 0,
-    /// <summary>
-    /// slim skin (alex)
-    /// </summary>
-    slim
 }
