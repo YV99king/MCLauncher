@@ -111,7 +111,7 @@ public partial class Login
         msLoginInfo["refresh_token"] = Uri.UnescapeDataString(msLoginInfo["refresh_token"]);
 
         if (!msLoginInfo.TryGetValue("access_token", out _))
-            throw new ArgumentException("Username or password incorrect", nameof(password));
+            throw new MicrosoftLoginWrongCredentialsException("Username or password incorrect", nameof(password));
 
         return msLoginInfo;
     }
@@ -133,7 +133,7 @@ public partial class Login
         var response = _client.Send(request);
 
         if (!response.IsSuccessStatusCode)
-            throw new Exception("xboxlive login failed");//TODO: implemnt error system
+            throw new XboxLiveLoginFailedException();
         var xboxLiveLoginJson = JsonDocument.Parse(response.Content.ReadAsStringAsync().Result);
         string xboxLiveToken = xboxLiveLoginJson.RootElement.GetProperty("Token").GetString();
         ulong xboxLiveUserHash = Convert.ToUInt64(xboxLiveLoginJson.RootElement.GetProperty("DisplayClaims").GetProperty("xui")[0].GetProperty("uhs").GetString());
