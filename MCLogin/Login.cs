@@ -7,6 +7,9 @@ using System.Text.RegularExpressions;
 
 namespace MCLauncher;
 
+/// <summary>
+/// Provides access to Mojang's authentication services
+/// </summary>
 public partial class Login
 {
     private readonly HttpClient _client;
@@ -35,7 +38,7 @@ public partial class Login
     }
 
     /// <summary>
-    /// minecraft bearer token
+    /// Minecraft bearer token
     /// </summary>
     public string AccessToken
     {
@@ -60,12 +63,12 @@ public partial class Login
     public DateTime AccessTokenExpiry => accessTokenExpiry;
 
     /// <summary>
-    /// generates minecraft bearer token
+    /// generates Minecraft bearer token
     /// </summary>
     /// <param name="email">the account's email</param>
-    /// <param name="password">the accaunt's password</param>
+    /// <param name="password">the account's password</param>
     /// <param name="accessTokenExpiry">where to save the bearer token's expiry date</param>
-    /// <returns>minecraft bearer token</returns>
+    /// <returns>Minecraft bearer token</returns>
     public string GenerateAccessToken(string email, string password, out DateTime accessTokenExpiry)
     {
         (string sFTTag, string urlPost) = GetPPFTAndUrlPost();
@@ -111,7 +114,7 @@ public partial class Login
         msLoginInfo["refresh_token"] = Uri.UnescapeDataString(msLoginInfo["refresh_token"]);
 
         if (!msLoginInfo.TryGetValue("access_token", out _))
-            throw new MicrosoftLoginWrongCredentialsException("Username or password incorrect", nameof(password));
+            throw new ArgumentException("Username or password incorrect", nameof(password));
 
         return msLoginInfo;
     }
@@ -133,7 +136,7 @@ public partial class Login
         var response = _client.Send(request);
 
         if (!response.IsSuccessStatusCode)
-            throw new XboxLiveLoginFailedException();
+            throw new XboxLiveException(0, "Xbox live login failed");
         var xboxLiveLoginJson = JsonDocument.Parse(response.Content.ReadAsStringAsync().Result);
         string xboxLiveToken = xboxLiveLoginJson.RootElement.GetProperty("Token").GetString();
         ulong xboxLiveUserHash = Convert.ToUInt64(xboxLiveLoginJson.RootElement.GetProperty("DisplayClaims").GetProperty("xui")[0].GetProperty("uhs").GetString());
@@ -189,9 +192,9 @@ public partial class Login
     }
 
     /// <summary>
-    /// returns a value whether the account has purchased minecraft
+    /// returns a value whether the account has purchased Minecraft
     /// </summary>
-    /// <returns>whether the account has purchased minecraft</returns>
+    /// <returns>whether the account has purchased Minecraft</returns>
     public bool IsOwnMinecraft()
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "https://api.minecraftservices.com/entitlements/mcstore");
@@ -203,7 +206,7 @@ public partial class Login
     }
 
     /// <summary>
-    /// sets the acount's skin to the specified skin
+    /// sets the account's skin to the specified skin
     /// </summary>
     /// <param name="skinPath">path of the skin asset</param>
     /// <param name="type">the skin type</param>
@@ -227,4 +230,6 @@ public partial class Login
         }
         _client.Send(request);
     }
+
+    private void SetCape() { }//TODO: implement SetCape
 }

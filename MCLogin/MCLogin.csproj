@@ -22,7 +22,4 @@
   <PropertyGroup>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
   </PropertyGroup>
-  <ItemGroup>
-    <Reference Include="System.Memory" />
-  </ItemGroup>
 </Project>
