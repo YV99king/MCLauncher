@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 
 namespace MCLauncher;
@@ -22,11 +24,18 @@ public class MinecraftLauncher
         return !string.IsNullOrEmpty(version);
     }
 
-    public void LaunchMinecraft()
+    public void LaunchMinecraft(Dictionary<string, string> args)
     {
-
         using StreamReader jsonStream = new(Path.Combine(_minecraftPath.FullName, "versions", _version, _version + ".json"));
-        var versionJson = JsonDocument.Parse(jsonStream.ReadToEnd());
-
+        var launchArgsJson = JsonDocument.Parse(jsonStream.ReadToEnd()).RootElement.GetProperty("arguments");
+        StringBuilder cmdCommandBuilder = new($"/C {Path.Combine(_minecraftPath.FullName, "runtime", "java-runtime-delta", )}");
+    }
+    private string GetOSAndArchitecture()
+    {
+        if (Environment.Is64BitOperatingSystem)
+        {
+            if (OperatingSystem.IsWindows())
+                return 
+        }
     }
 }
