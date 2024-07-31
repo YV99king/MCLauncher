@@ -231,5 +231,9 @@ public partial class Login
         _client.Send(request);
     }
 
+#pragma warning disable CA1822 // Mark members as static
+#pragma warning disable IDE0051 // Remove unused private members
     private void SetCape() { }//TODO: implement SetCape
+#pragma warning restore IDE0051 // Remove unused private members
+#pragma warning restore CA1822 // Mark members as static
 }
