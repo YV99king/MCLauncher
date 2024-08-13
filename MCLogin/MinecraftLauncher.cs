@@ -33,10 +33,11 @@ public class MinecraftLauncher
     public void LaunchMinecraft(Options options)
     {
         var versionJson = VersionJson.DeserializeJson(new FileStream(Path.Combine(_minecraftPath.FullName, "versions", _version), FileMode.Open));
-        StringBuilder minecraftCommandBuilder = new($"/C {Path.Combine(_minecraftPath.FullName, "runtime", versionJson.javaVersion.component, PlatformInfo.GetJavaPlatformName(), versionJson.javaVersion.component, @"bin\java.exe")}");
+        StringBuilder minecraftCommandBuilder = new($"/C {Path.Combine(_minecraftPath.FullName, "runtime", versionJson.javaVersion.component, PlatformInfo.GetJavaPlatformName(), versionJson.javaVersion.component, @"bin\java.exe")} ");
+
     }
 
-    public class Options(string username, string uuid, string token)
+    public record Options(string username, string uuid, string token)
     {
         public string username = username;
         public string uuid = uuid;
@@ -224,10 +225,11 @@ public class MinecraftLauncher
         public record Library
         {
             public LibraryDownloads downloads;
-            public string name;
-            public List<Rule> rules;
             public Extract extract;
+            public string name;
             public Natives natives;
+            public List<Rule> rules;
+            public string url;
 
             public record Extract
             {
@@ -236,6 +238,7 @@ public class MinecraftLauncher
             public record LibraryDownloads
             {
                 public Artifact artifact;
+                public Classifiers classifiers;
 
                 public record Artifact
                 {
@@ -246,20 +249,14 @@ public class MinecraftLauncher
                 }
                 public record Classifiers
                 {
+                    public Artifact javadoc;
                     [JsonPropertyName("natives-linux")]
-                    public NativesSource nativeslinux;
+                    public Artifact nativesLinux;
                     [JsonPropertyName("natives-osx")]
-                    public NativesSource nativesosx;
+                    public Artifact nativesOSX;
                     [JsonPropertyName("natives-windows")]
-                    public NativesSource nativeswindows;
-
-                    public record NativesSource
-                    {
-                        public string path;
-                        public string sha1;
-                        public int size;
-                        public string url;
-                    }
+                    public Artifact nativesWindows;
+                    public Artifact sources;
                 }
             }
             public record Natives
@@ -329,6 +326,8 @@ public class MinecraftLauncher
             public string assets;
             public MainExecutablesDownloads downloads;
             public string id;
+            public string inheritsFrom;
+            public string jar;
             public JavaVersion javaVersion;
             public List<Library> libraries;
             public Logging logging;
