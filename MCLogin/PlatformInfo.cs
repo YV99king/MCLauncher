@@ -34,24 +34,13 @@ public static class PlatformInfo
     /// <returns>The Java platform name as a string.</returns>
     public static string GetJavaPlatformName()
     {
-        string platformString = "";
-
-        switch (Environment.OSVersion.Platform)
+        string platformString = Environment.OSVersion.Platform switch
         {
-            case PlatformID.Win32NT:
-                platformString = Environment.Is64BitProcess ? "windows-x64" : "windows-x86";
-                break;
-            case PlatformID.Unix:
-                platformString = Environment.Is64BitProcess ? "linux" : "linux-i386";
-                break;
-            case PlatformID.MacOSX:
-                platformString = Environment.Is64BitProcess ? "mac-os-arm64" : "mac-os";
-                break;
-            default:
-                platformString = "gamecore";
-                break;
-        }
-
+            PlatformID.Win32NT => Environment.Is64BitProcess ? "windows-x64" : "windows-x86",
+            PlatformID.Unix => Environment.Is64BitProcess ? "linux" : "linux-i386",
+            PlatformID.MacOSX => Environment.Is64BitProcess ? "mac-os-arm64" : "mac-os",
+            _ => "gamecore",
+        };
         return platformString;
     }
 

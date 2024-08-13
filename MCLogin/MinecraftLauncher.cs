@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace MCLauncher;
 
@@ -29,105 +30,312 @@ public class MinecraftLauncher
 
     }
 
-    public void LaunchMinecraft(Dictionary<string, string> args)
+    public void LaunchMinecraft(Options options)
     {
         var versionJson = VersionJson.DeserializeJson(new FileStream(Path.Combine(_minecraftPath.FullName, "versions", _version), FileMode.Open));
-        StringBuilder minecraftCommandBuilder = new($"/C {Path.Combine(_minecraftPath.FullName, PlatformInfo.GetJavaPlatformName(), versionJson.javaVersion.component, )}");
+        StringBuilder minecraftCommandBuilder = new($"/C {Path.Combine(_minecraftPath.FullName, "runtime", versionJson.javaVersion.component, PlatformInfo.GetJavaPlatformName(), versionJson.javaVersion.component, @"bin\java.exe")}");
+    }
+
+    public class Options(string username, string uuid, string token)
+    {
+        public string username = username;
+        public string uuid = uuid;
+        public string token = token;
+        public string executablePath;
+        public string defaultExecutablePath;
+        public List<string> jvmArguments;
+        public string launcherName;
+        public string launcherVersion;
+        public string gameDirectory;
+        public bool demo;
+        public bool customResolution;
+        public string resolutionWidth;
+        public string resolutionHeight;
+        public string server;
+        public string port;
+        public string nativesDirectory;
+        public bool enableLoggingConfig;
+        public bool disableMultiplayer;
+        public bool disableChat;
+        public string quickPlayPath;
+        public string quickPlaySingleplayer;
+        public string quickPlayMultiplayer;
+        public string quickPlayRealms;
     }
 
     private class VersionJson
     {
-        public static VersionJsonDeserialization DeserializeJson(string json) =>
-            JsonSerializer.Deserialize<VersionJsonDeserialization>(json);
-        public static VersionJsonDeserialization DeserializeJson(Stream stream) =>
-            JsonSerializer.Deserialize<VersionJsonDeserialization>(stream);
-        public static VersionJsonDeserialization DeserializeJson(JsonDocument json) =>
-            JsonSerializer.Deserialize<VersionJsonDeserialization>(json);
-        public class VersionJsonDeserialization
+        private static readonly JsonSerializerOptions options = new()
         {
-            public Arguments arguments { get; set; }
-            public AssetIndex assetIndex { get; set; }
-            public string assets { get; set; }
-            public Downloads downloads { get; set; }
-            public string id { get; set; }
-            public JavaVersion javaVersion { get; set; }
-            public List<Library> libraries { get; set; }
-            public Logging logging { get; set; }
-            public string mainClass { get; set; }
-            public int minimumLauncherVersion { get; set; }
-            public string type { get; set; }
-        }
-        public class Arguments
+            Converters = { new ArgumentInfoJsonConverter() },
+            WriteIndented = true
+        };
+        private class ArgumentInfoJsonConverter : JsonConverter<Arguments>
         {
-            public List<object> game { get; set; }
-            public List<object> jvm { get; set; }
+            public override Arguments Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            {
+                var arguments = new Arguments();
+
+                while (reader.Read())
+                {
+                    if (reader.TokenType == JsonTokenType.EndObject)
+                    {
+                        return arguments;
+                    }
+
+                    if (reader.TokenType == JsonTokenType.PropertyName)
+                    {
+                        string propertyName = reader.GetString();
+                        reader.Read();
+
+                        if (propertyName == "game")
+                        {
+                            arguments.game = ReadArgumentInfoList(ref reader, options);
+                        }
+                        else if (propertyName == "jvm")
+                        {
+                            arguments.jvm = ReadArgumentInfoList(ref reader, options);
+                        }
+                    }
+                }
+
+                throw new JsonException("Unexpected JSON format for Arguments.");
+            }
+            private static List<Arguments.ArgumentInfo> ReadArgumentInfoList(ref Utf8JsonReader reader, JsonSerializerOptions options)
+            {
+                var list = new List<Arguments.ArgumentInfo>();
+
+                if (reader.TokenType == JsonTokenType.StartArray)
+                {
+                    while (reader.Read())
+                    {
+                        if (reader.TokenType == JsonTokenType.EndArray)
+                        {
+                            break;
+                        }
+
+                        if (reader.TokenType == JsonTokenType.String)
+                        {
+                            if (list.Count > 0 && list[^1].rules == null)
+                                list[^1].value.Add(reader.GetString());
+                            else
+                                list.Add(new Arguments.ArgumentInfo
+                                {
+                                    value = [reader.GetString()]
+                                });
+                        }
+                        else if (reader.TokenType == JsonTokenType.StartObject)
+                        {
+                            var argumentInfo = JsonSerializer.Deserialize<Arguments.ArgumentInfo>(ref reader, options);
+                            list.Add(argumentInfo);
+                        }
+                    }
+                }
+
+                return list;
+            }
+
+            public override void Write(Utf8JsonWriter writer, Arguments value, JsonSerializerOptions options)
+            {
+                writer.WriteStartObject();
+
+                writer.WritePropertyName("game");
+                WriteArgumentInfoList(writer, value.game, options);
+
+                writer.WritePropertyName("jvm");
+                WriteArgumentInfoList(writer, value.jvm, options);
+
+                writer.WriteEndObject();
+            }
+            private static void WriteArgumentInfoList(Utf8JsonWriter writer, List<Arguments.ArgumentInfo> list, JsonSerializerOptions options)
+            {
+                writer.WriteStartArray();
+
+                foreach (var argumentInfo in list)
+                {
+                    if (argumentInfo.rules == null && argumentInfo.value.Count == 1)
+                    {
+                        writer.WriteStringValue(argumentInfo.value[0]);
+                    }
+                    else
+                    {
+                        writer.WriteStartObject();
+
+                        if (argumentInfo.rules != null)
+                        {
+                            writer.WritePropertyName("rules");
+                            JsonSerializer.Serialize(writer, argumentInfo.rules, options);
+                        }
+
+                        if (argumentInfo.value != null)
+                        {
+                            writer.WritePropertyName("value");
+
+                            if (argumentInfo.value.Count == 1)
+                            {
+                                writer.WriteStringValue(argumentInfo.value[0]);
+                            }
+                            else
+                            {
+                                JsonSerializer.Serialize(writer, argumentInfo.value, options);
+                            }
+                        }
+
+                        writer.WriteEndObject();
+                    }
+                }
+
+                writer.WriteEndArray();
+            }
         }
-        public class Artifact
+        public static VersionJsonRoot DeserializeJson(string json) =>
+            JsonSerializer.Deserialize<VersionJsonRoot>(json, options);
+        public static VersionJsonRoot DeserializeJson(Stream stream) =>
+            JsonSerializer.Deserialize<VersionJsonRoot>(stream, options);
+        public static VersionJsonRoot DeserializeJson(JsonDocument json) =>
+            JsonSerializer.Deserialize<VersionJsonRoot>(json, options);
+
+
+#pragma warning disable IDE1006 // Naming Styles
+        public record Arguments
         {
-            public string path { get; set; }
-            public string sha1 { get; set; }
-            public int size { get; set; }
-            public string url { get; set; }
+            public List<ArgumentInfo> game;
+            public List<ArgumentInfo> jvm;
+
+            public record ArgumentInfo
+            {
+                public List<Rule> rules;
+                public List<string> value;
+            }
         }
-        public class AssetIndex
+        public record AssetIndex
         {
-            public string id { get; set; }
-            public string sha1 { get; set; }
-            public int size { get; set; }
-            public int totalSize { get; set; }
-            public string url { get; set; }
+            public string id;
+            public string sha1;
+            public int size;
+            public int totalSize;
+            public string url;
         }
-        public class Client
+        public record JavaVersion
         {
-            public string sha1 { get; set; }
-            public int size { get; set; }
-            public string url { get; set; }
-            public string argument { get; set; }
-            public File file { get; set; }
-            public string type { get; set; }
+            public string component;
+            public int majorVersion;
         }
-        public class Downloads
+        public record Library
         {
-            public Client client { get; set; }
-            public Server server { get; set; }
-            public Artifact artifact { get; set; }
+            public LibraryDownloads downloads;
+            public string name;
+            public List<Rule> rules;
+            public Extract extract;
+            public Natives natives;
+
+            public record Extract
+            {
+                public List<string> exclude;
+            }
+            public record LibraryDownloads
+            {
+                public Artifact artifact;
+
+                public record Artifact
+                {
+                    public string path;
+                    public string sha1;
+                    public int size;
+                    public string url;
+                }
+                public record Classifiers
+                {
+                    [JsonPropertyName("natives-linux")]
+                    public NativesSource nativeslinux;
+                    [JsonPropertyName("natives-osx")]
+                    public NativesSource nativesosx;
+                    [JsonPropertyName("natives-windows")]
+                    public NativesSource nativeswindows;
+
+                    public record NativesSource
+                    {
+                        public string path;
+                        public string sha1;
+                        public int size;
+                        public string url;
+                    }
+                }
+            }
+            public record Natives
+            {
+                public string linux;
+                public string osx;
+                public string windows;
+            }
         }
-        public class File
+        public record Logging
         {
-            public string id { get; set; }
-            public string sha1 { get; set; }
-            public int size { get; set; }
-            public string url { get; set; }
+            public LoggingInfo client;
+
+            public record LoggingInfo
+            {
+                public string argument;
+                public File file;
+                public string type;
+
+                public record File
+                {
+                    public string id;
+                    public string sha1;
+                    public int size;
+                    public string url;
+                }
+            }
         }
-        public class JavaVersion
+        public record MainExecutablesDownloads
         {
-            public string component { get; set; }
-            public int majorVersion { get; set; }
+            public SourceInfo client;
+            public SourceInfo server;
+
+            public record SourceInfo
+            {
+                public string sha1;
+                public int size;
+                public string url;
+            }
         }
-        public class Library
+        public record Rule
         {
-            public Downloads downloads { get; set; }
-            public string name { get; set; }
-            public List<Rule> rules { get; set; }
+            public string action;
+            public List<Feature> features;
+            public OS os;
+
+            public record OS
+            {
+                public string name;
+                public string arch;
+            }
+            public enum Feature
+            {
+                None = 0,
+                is_demo_user,
+                has_custom_resolution,
+                has_quick_plays_support,
+                is_quick_play_singleplayer,
+                is_quick_play_multiplayer,
+                is_quick_play_realms
+            }
         }
-        public class Logging
+        public record VersionJsonRoot
         {
-            public Client client { get; set; }
+            public Arguments arguments;
+            public AssetIndex assetIndex;
+            public string assets;
+            public MainExecutablesDownloads downloads;
+            public string id;
+            public JavaVersion javaVersion;
+            public List<Library> libraries;
+            public Logging logging;
+            public string mainClass;
+            public string minecraftArguments;
+            public string type;
         }
-        public class OS
-        {
-            public string name { get; set; }
-        }
-        public class Rule
-        {
-            public string action { get; set; }
-            public OS os { get; set; }
-        }
-        public class Server
-        {
-            public string sha1 { get; set; }
-            public int size { get; set; }
-            public string url { get; set; }
-        }
+#pragma warning restore IDE1006 // Naming Styles
     }
 }
