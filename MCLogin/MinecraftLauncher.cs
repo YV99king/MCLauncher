@@ -111,9 +111,7 @@ public class MinecraftLauncher
                     while (reader.Read())
                     {
                         if (reader.TokenType == JsonTokenType.EndArray)
-                        {
                             break;
-                        }
 
                         if (reader.TokenType == JsonTokenType.String)
                         {
@@ -196,8 +194,25 @@ public class MinecraftLauncher
         public static VersionJsonRoot DeserializeJson(JsonDocument json) =>
             JsonSerializer.Deserialize<VersionJsonRoot>(json, options);
 
+        public static VersionJsonRoot InheritJson(VersionJsonRoot originalJson, DirectoryInfo minecraftPath)
+        {
+            VersionJsonRoot inheritedJson;
+            using var inheritedJsonStream = new FileStream(Path.Combine(minecraftPath.FullName, "versions", originalJson.inheritsFrom, originalJson.inheritsFrom + ".json"), FileMode.Open);
+            inheritedJson = DeserializeJson(inheritedJsonStream);
+            return originalJson with
+            {
+                assetIndex = originalJson.assetIndex with
+                {
+                    id = originalJson.assetIndex.id ?? inheritedJson.assetIndex.id,
+                    sha1 = inheritedJson.assetIndex.sha1,
+                    size = inheritedJson.assetIndex.size,
+                    totalSize = inheritedJson.assetIndex.totalSize,
+                    url = inheritedJson.assetIndex.url
+                },
+                assets ??=
+            }
+        }
 
-#pragma warning disable IDE1006 // Naming Styles
         public record Arguments
         {
             public List<ArgumentInfo> game;
@@ -335,6 +350,5 @@ public class MinecraftLauncher
             public string minecraftArguments;
             public string type;
         }
-#pragma warning restore IDE1006 // Naming Styles
     }
 }
