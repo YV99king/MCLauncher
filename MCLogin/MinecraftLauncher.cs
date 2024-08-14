@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq.Expressions;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -35,6 +36,7 @@ public class MinecraftLauncher
         var versionJson = VersionJson.DeserializeJson(new FileStream(Path.Combine(_minecraftPath.FullName, "versions", _version), FileMode.Open));
         StringBuilder minecraftCommandBuilder = new($"/C {Path.Combine(_minecraftPath.FullName, "runtime", versionJson.javaVersion.component, PlatformInfo.GetJavaPlatformName(), versionJson.javaVersion.component, @"bin\java.exe")} ");
 
+
     }
 
     public record Options(string username, string uuid, string token)
@@ -64,12 +66,12 @@ public class MinecraftLauncher
         public string quickPlayRealms;
     }
 
-    private class VersionJson
+    public class VersionJson
     {
         private static readonly JsonSerializerOptions options = new()
         {
-            Converters = { new ArgumentInfoJsonConverter() },
-            WriteIndented = true
+            Converters = { new ArgumentInfoJsonConverter(), new RuleJsonConverter(), new FeatureJsonConverter() },
+            IncludeFields = true
         };
         private class ArgumentInfoJsonConverter : JsonConverter<Arguments>
         {
@@ -102,6 +104,7 @@ public class MinecraftLauncher
 
                 throw new JsonException("Unexpected JSON format for Arguments.");
             }
+
             private static List<Arguments.ArgumentInfo> ReadArgumentInfoList(ref Utf8JsonReader reader, JsonSerializerOptions options)
             {
                 var list = new List<Arguments.ArgumentInfo>();
@@ -115,17 +118,22 @@ public class MinecraftLauncher
 
                         if (reader.TokenType == JsonTokenType.String)
                         {
+                            string value = reader.GetString();
                             if (list.Count > 0 && list[^1].rules == null)
-                                list[^1].value.Add(reader.GetString());
+                            {
+                                list[^1].value.Add(value);
+                            }
                             else
+                            {
                                 list.Add(new Arguments.ArgumentInfo
                                 {
-                                    value = [reader.GetString()]
+                                    value = [value]
                                 });
+                            }
                         }
                         else if (reader.TokenType == JsonTokenType.StartObject)
                         {
-                            var argumentInfo = JsonSerializer.Deserialize<Arguments.ArgumentInfo>(ref reader, options);
+                            Arguments.ArgumentInfo argumentInfo = JsonSerializer.Deserialize<Arguments.ArgumentInfo>(ref reader, options);
                             list.Add(argumentInfo);
                         }
                     }
@@ -146,6 +154,7 @@ public class MinecraftLauncher
 
                 writer.WriteEndObject();
             }
+
             private static void WriteArgumentInfoList(Utf8JsonWriter writer, List<Arguments.ArgumentInfo> list, JsonSerializerOptions options)
             {
                 writer.WriteStartArray();
@@ -187,6 +196,107 @@ public class MinecraftLauncher
                 writer.WriteEndArray();
             }
         }
+        public class FeatureJsonConverter : JsonConverter<List<Rule.Feature>>
+        {
+            public override List<Rule.Feature> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            {
+                if (reader.TokenType != JsonTokenType.PropertyName)
+                    throw new JsonException("Expected a property name token.");
+
+                string featureName = reader.GetString();
+                reader.Read();
+
+                var feature = featureName switch
+                {
+                    "is_demo_user" => Rule.Feature.is_demo_user,
+                    "has_custom_resolution" => Rule.Feature.has_custom_resolution,
+                    "has_quick_plays_support" => Rule.Feature.has_quick_plays_support,
+                    "is_quick_play_singleplayer" => Rule.Feature.is_quick_play_singleplayer,
+                    "is_quick_play_multiplayer" => Rule.Feature.is_quick_play_multiplayer,
+                    "is_quick_play_realms" => Rule.Feature.is_quick_play_realms,
+                    _ => throw new JsonException($"Unknown feature: {featureName}")
+                };
+            }
+
+            public override void Write(Utf8JsonWriter writer, List<Rule.Feature> value, JsonSerializerOptions options)
+            {
+                string featureName = value switch
+                {
+                    Rule.Feature.is_demo_user => "is_demo_user",
+                    Rule.Feature.has_custom_resolution => "has_custom_resolution",
+                    Rule.Feature.has_quick_plays_support => "has_quick_plays_support",
+                    Rule.Feature.is_quick_play_singleplayer => "is_quick_play_singleplayer",
+                    Rule.Feature.is_quick_play_multiplayer => "is_quick_play_multiplayer",
+                    Rule.Feature.is_quick_play_realms => "is_quick_play_realms",
+                    _ => throw new JsonException($"Unknown feature: {value}")
+                };
+
+                writer.WritePropertyName(featureName);
+                writer.WriteBooleanValue(true);
+            }
+        }
+        public class RuleJsonConverter : JsonConverter<Rule>
+        {
+            public override Rule Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            {
+                if (reader.TokenType != JsonTokenType.StartObject)
+                    throw new JsonException("Expected start of an object.");
+
+                var rule = new Rule();
+                while (reader.Read())
+                {
+                    if (reader.TokenType == JsonTokenType.EndObject)
+                    {
+                        return rule;
+                    }
+
+                    if (reader.TokenType == JsonTokenType.PropertyName)
+                    {
+                        string propertyName = reader.GetString();
+                        reader.Read();
+
+                        switch (propertyName)
+                        {
+                            case "action":
+                                rule.action = reader.GetString();
+                                break;
+                            case "os":
+                                rule.os = JsonSerializer.Deserialize<Rule.OS>(ref reader, options);
+                                break;
+                            case "features":
+                                rule.features = JsonSerializer.Deserialize<List<Rule.Feature>>(ref reader, options);
+                                break;
+                            default:
+                                throw new JsonException($"Unexpected property: {propertyName}");
+                        }
+                    }
+                }
+
+                throw new JsonException("Unexpected end of JSON.");
+            }
+
+            public override void Write(Utf8JsonWriter writer, Rule value, JsonSerializerOptions options)
+            {
+                writer.WriteStartObject();
+
+                writer.WritePropertyName("action");
+                writer.WriteStringValue(value.action);
+
+                if (value.os != null)
+                {
+                    writer.WritePropertyName("os");
+                    JsonSerializer.Serialize(writer, value.os, options);
+                }
+
+                if (value.features != null)
+                {
+                    writer.WritePropertyName("features");
+                    JsonSerializer.Serialize(writer, value.features, options);
+                }
+
+                writer.WriteEndObject();
+            }
+        }
         public static VersionJsonRoot DeserializeJson(string json) =>
             JsonSerializer.Deserialize<VersionJsonRoot>(json, options);
         public static VersionJsonRoot DeserializeJson(Stream stream) =>
@@ -199,18 +309,7 @@ public class MinecraftLauncher
             VersionJsonRoot inheritedJson;
             using var inheritedJsonStream = new FileStream(Path.Combine(minecraftPath.FullName, "versions", originalJson.inheritsFrom, originalJson.inheritsFrom + ".json"), FileMode.Open);
             inheritedJson = DeserializeJson(inheritedJsonStream);
-            return originalJson with
-            {
-                assetIndex = originalJson.assetIndex with
-                {
-                    id = originalJson.assetIndex.id ?? inheritedJson.assetIndex.id,
-                    sha1 = inheritedJson.assetIndex.sha1,
-                    size = inheritedJson.assetIndex.size,
-                    totalSize = inheritedJson.assetIndex.totalSize,
-                    url = inheritedJson.assetIndex.url
-                },
-                assets ??=
-            }
+            throw new NotImplementedException(); //TODO: implement `InheritsFrom` method
         }
 
         public record Arguments
