@@ -12,12 +12,10 @@ public static class Program
         handler.AllowAutoRedirect = true;
         using HttpClient client = new(handler);
 
-    Login:
-    //Console.Write("username: "); var username = Console.ReadLine();
-    //Console.Write("password: "); var password = Console.ReadLine();
-    //var loginInfo = new Login(username, password);
+        //Console.Write("username: "); var username = Console.ReadLine();
+        //Console.Write("password: "); var password = Console.ReadLine();
+        //var loginInfo = new Login(username, password);
 
-    InstallMinecraft:
-        Console.WriteLine(MinecraftLauncher.VersionJson.DeserializeJson(new FileStream(@"C:\Users\user\source\repos\MCLogin\.minecraft\versions\1.21\1.21.json", FileMode.Open)));
+        Console.WriteLine(MinecraftLauncher.VersionJson.DeserializeJson(new FileStream(@"..\..\..\..\.minecraft\versions\1.21\1.21.json", FileMode.Open)));
     }
 }

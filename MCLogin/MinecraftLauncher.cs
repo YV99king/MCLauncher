@@ -35,8 +35,7 @@ public class MinecraftLauncher
     {
         var versionJson = VersionJson.DeserializeJson(new FileStream(Path.Combine(_minecraftPath.FullName, "versions", _version), FileMode.Open));
         StringBuilder minecraftCommandBuilder = new($"/C {Path.Combine(_minecraftPath.FullName, "runtime", versionJson.javaVersion.component, PlatformInfo.GetJavaPlatformName(), versionJson.javaVersion.component, @"bin\java.exe")} ");
-
-
+        
     }
 
     public record Options(string username, string uuid, string token)
@@ -50,12 +49,12 @@ public class MinecraftLauncher
         public string launcherName;
         public string launcherVersion;
         public string gameDirectory;
-        public bool demo;
-        public bool customResolution;
+        public bool demo = false;
+        public bool customResolution = false;
         public string resolutionWidth;
         public string resolutionHeight;
         public string server;
-        public string port;
+        public int port;
         public string nativesDirectory;
         public bool enableLoggingConfig;
         public bool disableMultiplayer;
@@ -70,21 +69,21 @@ public class MinecraftLauncher
     {
         private static readonly JsonSerializerOptions options = new()
         {
-            Converters = { new ArgumentInfoJsonConverter(), new RuleJsonConverter(), new FeatureJsonConverter() },
+            Converters = { new ArgumentInfoJsonConverter(), new FeaturesListJsonConverter() },
             IncludeFields = true
         };
         private class ArgumentInfoJsonConverter : JsonConverter<Arguments>
         {
             public override Arguments Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
             {
-                var arguments = new Arguments();
+                if (reader.TokenType != JsonTokenType.StartObject)
+                    throw new JsonException("Expected start of an object.");
 
+                var arguments = new Arguments();
                 while (reader.Read())
                 {
                     if (reader.TokenType == JsonTokenType.EndObject)
-                    {
                         return arguments;
-                    }
 
                     if (reader.TokenType == JsonTokenType.PropertyName)
                     {
@@ -104,7 +103,6 @@ public class MinecraftLauncher
 
                 throw new JsonException("Unexpected JSON format for Arguments.");
             }
-
             private static List<Arguments.ArgumentInfo> ReadArgumentInfoList(ref Utf8JsonReader reader, JsonSerializerOptions options)
             {
                 var list = new List<Arguments.ArgumentInfo>();
@@ -114,7 +112,7 @@ public class MinecraftLauncher
                     while (reader.Read())
                     {
                         if (reader.TokenType == JsonTokenType.EndArray)
-                            break;
+                            return list;
 
                         if (reader.TokenType == JsonTokenType.String)
                         {
@@ -133,13 +131,51 @@ public class MinecraftLauncher
                         }
                         else if (reader.TokenType == JsonTokenType.StartObject)
                         {
-                            Arguments.ArgumentInfo argumentInfo = JsonSerializer.Deserialize<Arguments.ArgumentInfo>(ref reader, options);
+                            if (reader.TokenType != JsonTokenType.StartObject)
+                                throw new JsonException("Expected start of an object.");
+
+                            var argumentInfo = new Arguments.ArgumentInfo();
+                            while (reader.Read())
+                            {
+                                if (reader.TokenType == JsonTokenType.EndObject)
+                                    break;
+
+                                if (reader.TokenType == JsonTokenType.PropertyName)
+                                {
+                                    var propertyName = reader.GetString();
+                                    reader.Read();
+
+                                    if (propertyName == "rules" || propertyName == "compatibilityRules")
+                                        argumentInfo.rules = JsonSerializer.Deserialize<List<Rule>>(ref reader, options);
+                                    else if (propertyName == "value")
+                                    {
+                                        argumentInfo.value = [];
+                                        if (reader.TokenType == JsonTokenType.String)
+                                        {
+                                            argumentInfo.value.Add(reader.GetString());
+                                        }
+                                        else if (reader.TokenType == JsonTokenType.StartArray)
+                                        {
+                                            while (reader.Read())
+                                            {
+                                                if (reader.TokenType == JsonTokenType.EndArray)
+                                                    break;
+
+                                                if (reader.TokenType == JsonTokenType.String)
+                                                {
+                                                    argumentInfo.value.Add(reader.GetString());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             list.Add(argumentInfo);
                         }
                     }
                 }
 
-                return list;
+                throw new JsonException("Unexpected JSON format for Arguments.");
             }
 
             public override void Write(Utf8JsonWriter writer, Arguments value, JsonSerializerOptions options)
@@ -154,7 +190,6 @@ public class MinecraftLauncher
 
                 writer.WriteEndObject();
             }
-
             private static void WriteArgumentInfoList(Utf8JsonWriter writer, List<Arguments.ArgumentInfo> list, JsonSerializerOptions options)
             {
                 writer.WriteStartArray();
@@ -196,105 +231,56 @@ public class MinecraftLauncher
                 writer.WriteEndArray();
             }
         }
-        public class FeatureJsonConverter : JsonConverter<List<Rule.Feature>>
+        public class FeaturesListJsonConverter : JsonConverter<List<Rule.Feature>>
         {
             public override List<Rule.Feature> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-            {
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    throw new JsonException("Expected a property name token.");
-
-                string featureName = reader.GetString();
-                reader.Read();
-
-                var feature = featureName switch
-                {
-                    "is_demo_user" => Rule.Feature.is_demo_user,
-                    "has_custom_resolution" => Rule.Feature.has_custom_resolution,
-                    "has_quick_plays_support" => Rule.Feature.has_quick_plays_support,
-                    "is_quick_play_singleplayer" => Rule.Feature.is_quick_play_singleplayer,
-                    "is_quick_play_multiplayer" => Rule.Feature.is_quick_play_multiplayer,
-                    "is_quick_play_realms" => Rule.Feature.is_quick_play_realms,
-                    _ => throw new JsonException($"Unknown feature: {featureName}")
-                };
-            }
-
-            public override void Write(Utf8JsonWriter writer, List<Rule.Feature> value, JsonSerializerOptions options)
-            {
-                string featureName = value switch
-                {
-                    Rule.Feature.is_demo_user => "is_demo_user",
-                    Rule.Feature.has_custom_resolution => "has_custom_resolution",
-                    Rule.Feature.has_quick_plays_support => "has_quick_plays_support",
-                    Rule.Feature.is_quick_play_singleplayer => "is_quick_play_singleplayer",
-                    Rule.Feature.is_quick_play_multiplayer => "is_quick_play_multiplayer",
-                    Rule.Feature.is_quick_play_realms => "is_quick_play_realms",
-                    _ => throw new JsonException($"Unknown feature: {value}")
-                };
-
-                writer.WritePropertyName(featureName);
-                writer.WriteBooleanValue(true);
-            }
-        }
-        public class RuleJsonConverter : JsonConverter<Rule>
-        {
-            public override Rule Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
             {
                 if (reader.TokenType != JsonTokenType.StartObject)
                     throw new JsonException("Expected start of an object.");
 
-                var rule = new Rule();
+                var features = new List<Rule.Feature>();
                 while (reader.Read())
                 {
                     if (reader.TokenType == JsonTokenType.EndObject)
-                    {
-                        return rule;
-                    }
+                        return features;
 
-                    if (reader.TokenType == JsonTokenType.PropertyName)
-                    {
-                        string propertyName = reader.GetString();
-                        reader.Read();
+                    string featureName = reader.GetString();
+                    reader.Read();
 
-                        switch (propertyName)
-                        {
-                            case "action":
-                                rule.action = reader.GetString();
-                                break;
-                            case "os":
-                                rule.os = JsonSerializer.Deserialize<Rule.OS>(ref reader, options);
-                                break;
-                            case "features":
-                                rule.features = JsonSerializer.Deserialize<List<Rule.Feature>>(ref reader, options);
-                                break;
-                            default:
-                                throw new JsonException($"Unexpected property: {propertyName}");
-                        }
-                    }
+                    features.Add(featureName switch
+                    {
+                        "is_demo_user" => Rule.Feature.is_demo_user,
+                        "has_custom_resolution" => Rule.Feature.has_custom_resolution,
+                        "has_quick_plays_support" => Rule.Feature.has_quick_plays_support,
+                        "is_quick_play_singleplayer" => Rule.Feature.is_quick_play_singleplayer,
+                        "is_quick_play_multiplayer" => Rule.Feature.is_quick_play_multiplayer,
+                        "is_quick_play_realms" => Rule.Feature.is_quick_play_realms,
+                        _ => throw new JsonException($"Unknown feature: {featureName}")
+                    });
                 }
-
                 throw new JsonException("Unexpected end of JSON.");
             }
 
-            public override void Write(Utf8JsonWriter writer, Rule value, JsonSerializerOptions options)
+            public override void Write(Utf8JsonWriter writer, List<Rule.Feature> value, JsonSerializerOptions options)
             {
                 writer.WriteStartObject();
 
-                writer.WritePropertyName("action");
-                writer.WriteStringValue(value.action);
-
-                if (value.os != null)
+                foreach (var feature in value)
                 {
-                    writer.WritePropertyName("os");
-                    JsonSerializer.Serialize(writer, value.os, options);
-                }
+                    string featureName = feature switch
+                    {
+                        Rule.Feature.is_demo_user => "is_demo_user",
+                        Rule.Feature.has_custom_resolution => "has_custom_resolution",
+                        Rule.Feature.has_quick_plays_support => "has_quick_plays_support",
+                        Rule.Feature.is_quick_play_singleplayer => "is_quick_play_singleplayer",
+                        Rule.Feature.is_quick_play_multiplayer => "is_quick_play_multiplayer",
+                        Rule.Feature.is_quick_play_realms => "is_quick_play_realms",
+                        _ => throw new JsonException($"Unknown feature: {feature}")
+                    };
 
-                if (value.features != null)
-                {
-                    writer.WritePropertyName("features");
-                    JsonSerializer.Serialize(writer, value.features, options);
+                    writer.WritePropertyName(featureName);
+                    writer.WriteBooleanValue(true); 
                 }
-
-                writer.WriteEndObject();
             }
         }
         public static VersionJsonRoot DeserializeJson(string json) =>
