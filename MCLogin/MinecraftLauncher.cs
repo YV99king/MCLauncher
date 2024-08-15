@@ -34,17 +34,27 @@ public class MinecraftLauncher
     public void LaunchMinecraft(Options options)
     {
         var versionJson = VersionJson.DeserializeJson(new FileStream(Path.Combine(_minecraftPath.FullName, "versions", _version), FileMode.Open));
-        StringBuilder minecraftCommandBuilder = new($"/C {Path.Combine(_minecraftPath.FullName, "runtime", versionJson.javaVersion.component, PlatformInfo.GetJavaPlatformName(), versionJson.javaVersion.component, @"bin\java.exe")} ");
-        
+        StringBuilder minecraftCommandBuilder = new($"/C ");
+        if (options.executablePath != null)
+            minecraftCommandBuilder.Append($"{options.executablePath} ");
+        else
+            minecraftCommandBuilder.Append(Path.Combine(_minecraftPath.FullName,
+                                                        "runtime",
+                                                        versionJson.javaVersion.component,
+                                                        PlatformInfo.GetJavaPlatformName(),
+                                                        versionJson.javaVersion.component,
+                                                        @"bin\java.exe") + " ");
+        if (options.jvmArguments != null)
+            minecraftCommandBuilder.Append(options.jvmArguments);
+
     }
 
-    public record Options(string username, string uuid, string token)
+    public record Options
     {
-        public string username = username;
-        public string uuid = uuid;
-        public string token = token;
+        public string username;
+        public string uuid;
+        public string token;
         public string executablePath;
-        public string defaultExecutablePath;
         public List<string> jvmArguments;
         public string launcherName;
         public string launcherVersion;
@@ -56,9 +66,9 @@ public class MinecraftLauncher
         public string server;
         public int port;
         public string nativesDirectory;
-        public bool enableLoggingConfig;
-        public bool disableMultiplayer;
-        public bool disableChat;
+        public bool enableLoggingConfig = false;
+        public bool disableMultiplayer = false;
+        public bool disableChat = false;
         public string quickPlayPath;
         public string quickPlaySingleplayer;
         public string quickPlayMultiplayer;
