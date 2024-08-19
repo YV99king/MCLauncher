@@ -43,10 +43,20 @@ public class MinecraftLauncher
                                                         versionJson.javaVersion.component,
                                                         PlatformInfo.GetJavaPlatformName(),
                                                         versionJson.javaVersion.component,
-                                                        @"bin\java.exe") + " ");
-        if (options.jvmArguments != null)
-            minecraftCommandBuilder.Append(options.jvmArguments);
+                                                        @"bin\java") + " ");
+        if (options.jvmArguments != null && options.jvmArguments.Count > 0)
+            minecraftCommandBuilder.Append(string.Join(" ", options.jvmArguments) + ' ');
+        if (versionJson.arguments.jvm != null)
+        {
+            foreach (var arg in versionJson.arguments.jvm)
+            {
+                if (arg.rules != null)
+                {
+                    foreach (var rule in arg.rules)
 
+                }
+            }
+        }
     }
 
     public record Options
@@ -412,6 +422,29 @@ public class MinecraftLauncher
             public string action;
             public List<Feature> features;
             public OS os;
+
+            public bool IsRuleMaching(List<Feature> features)
+            {
+                bool match = true;
+                if (os.name != null)
+                    switch (PlatformInfo.OperatingSystem)
+                    {
+                        case PlatformInfo.OS.Windows:
+                            if (os.name != "windows")
+                                match = false;
+                            break;
+                        case PlatformInfo.OS.Linux:
+                            if (os.name != "linux")
+                                match = false;
+                            break;
+                        case PlatformInfo.OS.MacOS:
+                            if (os.name != "macos")
+                                match = false;
+                            break;
+                    }
+                if (os.arch != null)
+                    switch (PlatformInfo.)
+            }
 
             public record OS
             {
