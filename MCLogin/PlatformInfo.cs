@@ -45,6 +45,30 @@ public static class PlatformInfo
     }
 
     /// <summary>
+    /// Returns the OS's classpath seperator (';' or ':').
+    /// </summary>
+    /// <returns>the OS's classpath seperator (';' or ':').</returns>
+    public static char GetClasspathSeparator()
+    {
+        if (OperatingSystem == OS.Windows)
+            return ';';
+        else
+            return ':';
+    }
+
+    /// <summary>
+    /// Returns the OS's path seperator ('\' or '/').
+    /// </summary>
+    /// <returns>the OS's path seperator ('\' or '/').</returns>
+    public static char GetPathSeparator()
+    {
+        if (OperatingSystem == OS.Windows)
+            return '\\';
+        else
+            return '/';
+    }
+
+    /// <summary>
     /// The supported operating systems.
     /// </summary>
     public enum OS

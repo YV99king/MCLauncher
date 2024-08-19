@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Linq.Expressions;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using static MCLauncher.MinecraftLauncher.VersionJson;
 
 namespace MCLauncher;
 
@@ -43,46 +45,88 @@ public class MinecraftLauncher
                                                         versionJson.javaVersion.component,
                                                         PlatformInfo.GetJavaPlatformName(),
                                                         versionJson.javaVersion.component,
-                                                        @"bin\java") + " ");
+                                                        "bin", "java") + " ");
         if (options.jvmArguments != null && options.jvmArguments.Count > 0)
-            minecraftCommandBuilder.Append(string.Join(" ", options.jvmArguments) + ' ');
+            minecraftCommandBuilder.Append(string.Join(' ', options.jvmArguments) + ' ');
         if (versionJson.arguments.jvm != null)
+            minecraftCommandBuilder.Append(ParseArgumentList(options, versionJson.arguments.jvm));
+        else
+            minecraftCommandBuilder.Append(Path.Combine(_minecraftPath.FullName, "versions", versionJson.id, "natives") + ' ');
+    }
+    private static string ParseArgumentList(Options options, List<VersionJson.Arguments.ArgumentInfo> args)
+    {
+        var builder = new StringBuilder();
+        foreach (var arg in args)
         {
-            foreach (var arg in versionJson.arguments.jvm)
+            if (arg.rules != null)
             {
-                if (arg.rules != null)
-                {
-                    foreach (var rule in arg.rules)
-
-                }
+                bool IsRuleMatch = true;
+                foreach (var rule in arg.rules)
+                    if (!rule.IsRuleMatching(options))
+                    {
+                        IsRuleMatch = false;
+                        break;
+                    }
+                if (!IsRuleMatch)
+                    continue;
             }
+            builder.Append(string.Join(' ', arg.value) + ' ');
         }
+        return ReplaceArguments(builder.ToString());
+    }
+    private static string ReplaceArguments(string argstr, VersionJsonRoot versionData, string path, Options options, string classpath)
+    {
+        argstr = argstr.Replace("${natives_directory}", options.nativesDirectory);
+        argstr = argstr.Replace("${launcher_name}", options.launcherName);
+        argstr = argstr.Replace("${launcher_version}", !string.IsNullOrEmpty(options.launcherVersion) ? options.launcherVersion : GetLauncherVersion());
+        argstr = argstr.Replace("${classpath}", classpath);
+        argstr = argstr.Replace("${auth_player_name}", options.username);
+        argstr = argstr.Replace("${version_name}", versionData.id);
+        argstr = argstr.Replace("${game_directory}", !string.IsNullOrEmpty(options.gameDirectory) ? options.gameDirectory : path);
+        argstr = argstr.Replace("${assets_root}", Path.Combine(path, "assets"));
+        argstr = argstr.Replace("${assets_index_name}", !string.IsNullOrEmpty(versionData.assets) ? versionData.assets : versionData.id);
+        argstr = argstr.Replace("${auth_uuid}", options.uuid);
+        argstr = argstr.Replace("${auth_access_token}", options.token);
+        argstr = argstr.Replace("${user_type}", "msa");
+        argstr = argstr.Replace("${version_type}", versionData.type);
+        argstr = argstr.Replace("${user_properties}", "{}");
+        argstr = argstr.Replace("${resolution_width}", options.resolutionWidth.ToString());
+        argstr = argstr.Replace("${resolution_height}", options.resolutionHeight.ToString());
+        argstr = argstr.Replace("${game_assets}", Path.Combine(path, "assets", "virtual", "legacy"));
+        argstr = argstr.Replace("${auth_session}", options.token);
+        argstr = argstr.Replace("${library_directory}", Path.Combine(path, "libraries"));
+        argstr = argstr.Replace("${classpath_separator}", PlatformInfo.GetClasspathSeparator().ToString());
+        argstr = argstr.Replace("${quickPlayPath}", options.quickPlayPath);
+        argstr = argstr.Replace("${quickPlaySingleplayer}", options.quickPlaySingleplayer);
+        argstr = argstr.Replace("${quickPlayMultiplayer}", options.quickPlayMultiplayer);
+        argstr = argstr.Replace("${quickPlayRealms}", options.quickPlayRealms);
+        return argstr;
     }
 
     public record Options
     {
-        public string username;
-        public string uuid;
-        public string token;
+        public bool customResolution = false;
+        public bool demo = false;
+        public bool disableChat = false;
+        public bool disableMultiplayer = false;
+        public bool enableLoggingConfig = false;
         public string executablePath;
+        public string gameDirectory;
         public List<string> jvmArguments;
         public string launcherName;
         public string launcherVersion;
-        public string gameDirectory;
-        public bool demo = false;
-        public bool customResolution = false;
-        public string resolutionWidth;
-        public string resolutionHeight;
-        public string server;
-        public int port;
         public string nativesDirectory;
-        public bool enableLoggingConfig = false;
-        public bool disableMultiplayer = false;
-        public bool disableChat = false;
-        public string quickPlayPath;
-        public string quickPlaySingleplayer;
+        public int port;
         public string quickPlayMultiplayer;
+        public string quickPlayPath;
         public string quickPlayRealms;
+        public string quickPlaySingleplayer;
+        public int resolutionHeight;
+        public int resolutionWidth;
+        public string server;
+        public string token;
+        public string username;
+        public string uuid;
     }
 
     public class VersionJson
@@ -423,7 +467,7 @@ public class MinecraftLauncher
             public List<Feature> features;
             public OS os;
 
-            public bool IsRuleMaching(List<Feature> features)
+            public bool IsRuleMatching(Options options)
             {
                 bool match = true;
                 if (os.name != null)
@@ -431,19 +475,37 @@ public class MinecraftLauncher
                     {
                         case PlatformInfo.OS.Windows:
                             if (os.name != "windows")
-                                match = false;
-                            break;
+                                match = false; break;
                         case PlatformInfo.OS.Linux:
                             if (os.name != "linux")
-                                match = false;
-                            break;
+                                match = false; break;
                         case PlatformInfo.OS.MacOS:
                             if (os.name != "macos")
-                                match = false;
-                            break;
+                                match = false; break;
                     }
-                if (os.arch != null)
-                    switch (PlatformInfo.)
+                match = match && (os.arch == null || (!PlatformInfo.Is64Bit) == (os.arch == "x86"));
+                if (match && options != null)
+                    foreach (var feature in features)
+                        switch (feature)
+                        {
+                            case Feature.has_custom_resolution:
+                                match = options.customResolution; break;
+                            case Feature.has_quick_plays_support:
+                                match = options.quickPlayPath != null; break;
+                            case Feature.is_demo_user:
+                                match = options.demo; break;
+                            case Feature.is_quick_play_multiplayer:
+                                match = options.quickPlayMultiplayer != null; break;
+                            case Feature.is_quick_play_realms:
+                                match = options.quickPlayRealms != null; break;
+                            case Feature.is_quick_play_singleplayer:
+                                match = options.quickPlaySingleplayer != null; break;
+                        }
+                if (action == "allow")
+                    return match;
+                if (action == "disallow")
+                    return !match;
+                return match; //TODO: make sure this is the right behavior
             }
 
             public record OS
