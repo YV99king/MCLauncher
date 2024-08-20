@@ -183,12 +183,12 @@ public partial class Login
     /// returns the account's profile information
     /// </summary>
     /// <returns>the account's profile information</returns>
-    public JsonDocument GetProfileInfo()
+    public ProfileInfo.ProfileInfoRoot GetProfileInfo()
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "https://api.minecraftservices.com/minecraft/profile");
         request.Headers.Add("authorization", $"Bearer {AccessToken}");
         var response = _client.Send(request);
-        return JsonDocument.Parse(response.Content.ReadAsStringAsync().Result);
+        return JsonSerializer.Deserialize<ProfileInfo.ProfileInfoRoot>(response.Content.ReadAsStream(), new JsonSerializerOptions { IncludeFields = true });
     }
 
     /// <summary>
@@ -236,4 +236,30 @@ public partial class Login
     private void SetCape() { }//TODO: implement SetCape
 #pragma warning restore IDE0051 // Remove unused private members
 #pragma warning restore CA1822 // Mark members as static
+
+    public class ProfileInfo
+    {
+        public record Cape
+        {
+            public string id;
+            public string state;
+            public string url;
+            public string alias;
+        }
+        public record ProfileInfoRoot
+        {
+            public string id;
+            public string name;
+            public List<Skin> skins;
+            public List<Cape> capes;
+        }
+        public record Skin
+        {
+            public string id;
+            public string state;
+            public string url;
+            public string variant;
+            public string alias;
+        }
+    }
 }

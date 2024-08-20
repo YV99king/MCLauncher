@@ -29,6 +29,18 @@ public static class PlatformInfo
     public static OS OperatingSystem { get; }
 
     /// <summary>
+    /// Returns the OS's classpath seperator (';' or ':').
+    /// </summary>
+    /// <returns>the OS's classpath seperator (';' or ':').</returns>
+    public static char GetClasspathSeparator()
+    {
+        if (OperatingSystem == OS.Windows)
+            return ';';
+        else
+            return ':';
+    }
+
+    /// <summary>
     /// Returns the Java platform name based on the current operating system and process architecture.
     /// </summary>
     /// <returns>The Java platform name as a string.</returns>
@@ -45,18 +57,6 @@ public static class PlatformInfo
     }
 
     /// <summary>
-    /// Returns the OS's classpath seperator (';' or ':').
-    /// </summary>
-    /// <returns>the OS's classpath seperator (';' or ':').</returns>
-    public static char GetClasspathSeparator()
-    {
-        if (OperatingSystem == OS.Windows)
-            return ';';
-        else
-            return ':';
-    }
-
-    /// <summary>
     /// Returns the OS's path seperator ('\' or '/').
     /// </summary>
     /// <returns>the OS's path seperator ('\' or '/').</returns>
@@ -66,6 +66,19 @@ public static class PlatformInfo
             return '\\';
         else
             return '/';
+    }
+
+    public static void StartProcess(string command)
+    {
+        System.Diagnostics.Process process = new();
+        System.Diagnostics.ProcessStartInfo startInfo = new()
+        {
+            WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+            FileName = "cmd.exe",
+            Arguments = command
+        };
+        process.StartInfo = startInfo;
+        process.Start();
     }
 
     /// <summary>
