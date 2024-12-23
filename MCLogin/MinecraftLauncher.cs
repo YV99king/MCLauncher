@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -38,16 +39,18 @@ public class MinecraftLauncher
         options.uuid ??= loginInfo.id;
         options.username ??= loginInfo.name;
 
+        options.nativesDirectory ??= Path.Combine(_minecraftPath.FullName, "versions", _version, "natives");
+
         var versionJson = DeserializeJson(new FileStream(Path.Combine(_minecraftPath.FullName, "versions", _version, _version+".json"), FileMode.Open));
 
-        StringBuilder minecraftCommandBuilder = new($"/C ");
+        StringBuilder minecraftCommandBuilder = new();
         if (options.executablePath != null)
             minecraftCommandBuilder.Append($"{options.executablePath} ");
         else
             minecraftCommandBuilder.Append(Path.Combine(_minecraftPath.FullName,
                                                         "runtime",
                                                         versionJson.javaVersion.component,
-                                                        PlatformInfo.GetJavaPlatformName(),
+                                                        PlatformInfo.JavaPlatformName,
                                                         versionJson.javaVersion.component,
                                                         "bin", "java") + " ");
         
@@ -92,7 +95,14 @@ public class MinecraftLauncher
         if (options.disableChat)
             minecraftCommandBuilder.Append("--disableChat");
         Console.WriteLine("start");
-        PlatformInfo.StartProcess(minecraftCommandBuilder.ToString());
+        var cmdLine = minecraftCommandBuilder.ToString();
+
+        foreach (var part in cmdLine.Split(' '))
+        {
+            Console.WriteLine(part);
+        }
+
+        PlatformInfo.StartProcess(cmdLine);
     }
     private static string ParseArgumentsList(List<Arguments.ArgumentInfo> args, Options options, VersionJsonRoot versionJson, string minecraftPath)
     {
@@ -100,14 +110,14 @@ public class MinecraftLauncher
         foreach (var arg in args)
             if (Rule.IsRuleListMatching(arg.rules, options))
                 builder.Append(string.Join(' ', arg.value) + ' ');
-        return ReplaceArguments(builder.ToString(), versionJson, minecraftPath, options, GetLibrariesString(versionJson, minecraftPath));
+        return ReplaceArguments(builder.ToString(), versionJson, minecraftPath, options);
     }
-    private static string ReplaceArguments(string argstr, VersionJsonRoot versionJson, string minecraftPath, Options options, string classpath)
+    private static string ReplaceArguments(string argstr, VersionJsonRoot versionJson, string minecraftPath, Options options)
     {
         argstr = argstr.Replace("${natives_directory}", options.nativesDirectory);
         argstr = argstr.Replace("${launcher_name}", !string.IsNullOrEmpty(options.launcherName) ? options.launcherName : Utils.LauncherName);
         argstr = argstr.Replace("${launcher_version}", !string.IsNullOrEmpty(options.launcherVersion) ? options.launcherVersion : Utils.LauncherVersion);
-        argstr = argstr.Replace("${classpath}", classpath);
+        argstr = argstr.Replace("${classpath}", GetLibrariesString(versionJson, minecraftPath));
         argstr = argstr.Replace("${auth_player_name}", options.username);
         argstr = argstr.Replace("${version_name}", versionJson.id);
         argstr = argstr.Replace("${game_directory}", !string.IsNullOrEmpty(options.gameDirectory) ? options.gameDirectory : minecraftPath);
@@ -123,7 +133,7 @@ public class MinecraftLauncher
         argstr = argstr.Replace("${game_assets}", Path.Combine(minecraftPath, "assets", "virtual", "legacy"));
         argstr = argstr.Replace("${auth_session}", options.token);
         argstr = argstr.Replace("${library_directory}", Path.Combine(minecraftPath, "libraries"));
-        argstr = argstr.Replace("${classpath_separator}", PlatformInfo.GetClasspathSeparator().ToString());
+        argstr = argstr.Replace("${classpath_separator}", PlatformInfo.ClasspathSeparator.ToString());
         argstr = argstr.Replace("${quickPlayPath}", options.quickPlayPath);
         argstr = argstr.Replace("${quickPlaySingleplayer}", options.quickPlaySingleplayer);
         argstr = argstr.Replace("${quickPlayMultiplayer}", options.quickPlayMultiplayer);
@@ -135,10 +145,10 @@ public class MinecraftLauncher
         StringBuilder libString = new();
         foreach (var library in versionJson.libraries)
         {
-            if (Rule.IsRuleListMatching(library.rules, default))
+            if (!Rule.IsRuleListMatching(library.rules, default))
                 continue;
-            libString.Append(library.GetLibraryPath(minecraftPath, false) + PlatformInfo.GetClasspathSeparator());
-            libString.Append(library.GetLibraryPath(minecraftPath, true) + PlatformInfo.GetClasspathSeparator());
+            libString.Append(library.GetLibraryPath(minecraftPath, false) + PlatformInfo.ClasspathSeparator);
+            libString.Append(library.GetLibraryPath(minecraftPath, true) + PlatformInfo.ClasspathSeparator);
         }
         if (versionJson.jar != null)
             libString.Append(Path.Combine(minecraftPath, "versions", versionJson.jar, $"{versionJson.jar}.jar"));
@@ -148,7 +158,7 @@ public class MinecraftLauncher
     }
     private static string ParseArgumentsString(string arguments, Options options, VersionJsonRoot versionJson, string minecraftPath)
     {
-        arguments = ReplaceArguments(arguments.Trim(), versionJson, minecraftPath, options, null);
+        arguments = ReplaceArguments(arguments.Trim(), versionJson, minecraftPath, options);
         if (options.customResolution)
             arguments += "--width" + options.resolutionWidth + "--height" + options.resolutionHeight;
         if (options.demo)
@@ -454,9 +464,19 @@ public class MinecraftLauncher
             {
                 var nameParts = name.Split(':');
                 string basePath = nameParts[0], libname = nameParts[1], version = nameParts[2];
-                string libdir =  Path.Combine(path, "libraries", Path.Combine(basePath.Split('.')), libname, version);
-                if (includeNatives && natives != null)
-                    switch (PlatformInfo.OperatingSystem)
+                string libdir = Path.Combine(path, "libraries", Path.Combine(basePath.Split('.')), libname, version);
+                int index;
+                string fileEnding = "jar";
+                if ((index = version.IndexOf('@')) != -1)
+                {
+                    fileEnding = version[(index + 1)..];
+                    version = version[..index];
+                }
+                if (includeNatives && natives.GetNativesString() != string.Empty)
+                {
+
+                }
+                    /*switch (PlatformInfo.OperatingSystem)
                     {
                         case PlatformInfo.OS.Windows:
                             return Path.Combine(libdir, $"{libname}-{version}-{natives.windows}.jar");
@@ -464,8 +484,8 @@ public class MinecraftLauncher
                             return Path.Combine(libdir, $"{libname}-{version}-{natives.linux}.jar");
                         case PlatformInfo.OS.MacOS:
                             return Path.Combine(libdir, $"{libname}-{version}-{natives.osx}.jar");
-                    }
-                return Path.Combine(libdir, $"{libname}-{version}.jar");
+                    }*/
+                return Path.Combine(libdir, $"{libname}-{version}{string.Concat(nameParts[3..].Select(s => "-" + s))}.{fileEnding}");
             }
 
             public record Extract
@@ -501,6 +521,18 @@ public class MinecraftLauncher
                 public string linux;
                 public string osx;
                 public string windows;
+
+                public string GetNativesString()
+                {
+                    string arch = PlatformInfo.Is64Bit ? "64" : "32";
+                    return PlatformInfo.OperatingSystem switch
+                    {
+                        PlatformInfo.OS.Windows => (windows ?? string.Empty).Replace("${arch}", arch),
+                        PlatformInfo.OS.Linux => (linux ?? string.Empty).Replace("${arch}", arch),
+                        PlatformInfo.OS.MacOS => (osx ?? string.Empty).Replace("${arch}", arch),
+                        _ => string.Empty,
+                    };
+                }
             }
         }
         public record Logging

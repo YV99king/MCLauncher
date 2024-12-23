@@ -29,56 +29,40 @@ public static class PlatformInfo
     public static OS OperatingSystem { get; }
 
     /// <summary>
-    /// Returns the OS's classpath seperator (';' or ':').
+    /// Returns the OS's classpath separator (':' or ':').
     /// </summary>
-    /// <returns>the OS's classpath seperator (';' or ':').</returns>
-    public static char GetClasspathSeparator()
-    {
-        if (OperatingSystem == OS.Windows)
-            return ';';
-        else
-            return ':';
-    }
+    public static char ClasspathSeparator => OperatingSystem == OS.Windows ? ';' : ':';
 
     /// <summary>
-    /// Returns the Java platform name based on the current operating system and process architecture.
+    /// Returns the Java platform name based on the current operating system and process architecture
     /// </summary>
-    /// <returns>The Java platform name as a string.</returns>
-    public static string GetJavaPlatformName()
+    public static string JavaPlatformName { get; } = Environment.OSVersion.Platform switch
     {
-        string platformString = Environment.OSVersion.Platform switch
-        {
-            PlatformID.Win32NT => Environment.Is64BitProcess ? "windows-x64" : "windows-x86",
-            PlatformID.Unix => Environment.Is64BitProcess ? "linux" : "linux-i386",
-            PlatformID.MacOSX => Environment.Is64BitProcess ? "mac-os-arm64" : "mac-os",
-            _ => "gamecore",
-        };
-        return platformString;
-    }
+        PlatformID.Win32NT => Environment.Is64BitProcess ? "windows-x64" : "windows-x86",
+        PlatformID.Unix => Environment.Is64BitProcess ? "linux" : "linux-i386",
+        PlatformID.MacOSX => Environment.Is64BitProcess ? "mac-os-arm64" : "mac-os",
+        _ => "gamecore",
+    };
 
     /// <summary>
     /// Returns the OS's path seperator ('\' or '/').
     /// </summary>
-    /// <returns>the OS's path seperator ('\' or '/').</returns>
-    public static char GetPathSeparator()
-    {
-        if (OperatingSystem == OS.Windows)
-            return '\\';
-        else
-            return '/';
-    }
+    public static char PathSeparator => OperatingSystem == OS.Windows ? '\\' : '/';
 
-    public static void StartProcess(string command)
+    public static System.Diagnostics.Process StartProcess(string command)
     {
-        System.Diagnostics.Process process = new();
-        System.Diagnostics.ProcessStartInfo startInfo = new()
+        int argsIndex = command.IndexOf(' ');
+
+        System.Diagnostics.Process process = new()
         {
-            WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
-            FileName = "cmd.exe",
-            Arguments = command
+            StartInfo = new()
+            {
+                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+                FileName = command[..argsIndex],
+                Arguments = command[(argsIndex + 1)..]
+            }
         };
-        process.StartInfo = startInfo;
-        process.Start();
+        return process.Start() ? process : null;
     }
 
     /// <summary>

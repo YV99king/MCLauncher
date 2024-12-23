@@ -85,7 +85,7 @@ public partial class Login
         var response1 = _client.Send(request);
         var response = response1.Content.ReadAsStringAsync().Result;
 
-        string sFTTag = GetPPFTValueRegex().Match(response).Value.Replace("value=", "").Trim('"');
+        string sFTTag = GetPPFTValueRegex().Match(response.Split("sFTTag:")[1]).Value.Replace("value=", "").Trim('"');
         string urlPost = getUrlPostRegex().Match(response).Value.Replace("urlPost:", "").Trim('\'');
         return (sFTTag, urlPost);
     }
