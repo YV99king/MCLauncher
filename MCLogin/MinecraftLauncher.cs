@@ -148,7 +148,7 @@ public class MinecraftLauncher
             if (!Rule.IsRuleListMatching(library.rules, default))
                 continue;
             libString.Append(library.GetLibraryPath(minecraftPath, false) + PlatformInfo.ClasspathSeparator);
-            libString.Append(library.GetLibraryPath(minecraftPath, true) + PlatformInfo.ClasspathSeparator);
+            libString.Append(library.GetLibraryPath(minecraftPath, true) + PlatformInfo.ClasspathSeparator); //TODO: make sure no double seperator
         }
         if (versionJson.jar != null)
             libString.Append(Path.Combine(minecraftPath, "versions", versionJson.jar, $"{versionJson.jar}.jar"));
@@ -472,9 +472,24 @@ public class MinecraftLauncher
                     fileEnding = version[(index + 1)..];
                     version = version[..index];
                 }
-                if (includeNatives && natives.GetNativesString() != string.Empty)
+                if (includeNatives)
                 {
+                    if (natives.GetNativesString() is { } nativesString && nativesString != string.Empty)
+                    {
+                        var nativeClassifier = nativesString switch
+                            {
+                                "natives-linux" => downloads.classifiers.nativesLinux,
+                                "natives-osx" => downloads.classifiers.nativesOSX,
+                                "natives-windows" => downloads.classifiers.nativesWindows,
+                                _ => throw new NotImplementedException($"Unknown natives: {nativesString}")
+                            };
 
+                        if (nativeClassifier.path is { } nativePath)
+                            return Path.Combine(path, "libraries", nativePath);
+                        else
+                            return Path.Combine(libdir, $"{libname}-{version}{string.Concat(nameParts[3..].Select(s => "-" + s))}-{nativesString}.{fileEnding}");
+                    }
+                    return string.Empty;
                 }
                     /*switch (PlatformInfo.OperatingSystem)
                     {
@@ -486,7 +501,7 @@ public class MinecraftLauncher
                             return Path.Combine(libdir, $"{libname}-{version}-{natives.osx}.jar");
                     }*/
                 return Path.Combine(libdir, $"{libname}-{version}{string.Concat(nameParts[3..].Select(s => "-" + s))}.{fileEnding}");
-            }
+            } //TODO: cleanup, may return empty string
 
             public record Extract
             {
