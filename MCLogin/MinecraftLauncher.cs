@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -32,7 +33,7 @@ public class MinecraftLauncher
 
     }
 
-    public void LaunchMinecraft(Options options)
+    public Process LaunchMinecraft(Options options)
     {
         var loginInfo = _login.GetProfileInfo();
         options.token ??= _login.AccessToken;
@@ -94,15 +95,10 @@ public class MinecraftLauncher
             minecraftCommandBuilder.Append("--disableMultiplayer");
         if (options.disableChat)
             minecraftCommandBuilder.Append("--disableChat");
-        Console.WriteLine("start");
+
         var cmdLine = minecraftCommandBuilder.ToString();
 
-        foreach (var part in cmdLine.Split(' '))
-        {
-            Console.WriteLine(part);
-        }
-
-        PlatformInfo.StartProcess(cmdLine);
+        return PlatformInfo.StartProcess(cmdLine);
     }
     private static string ParseArgumentsList(List<Arguments.ArgumentInfo> args, Options options, VersionJsonRoot versionJson, string minecraftPath)
     {
@@ -485,7 +481,7 @@ public class MinecraftLauncher
                 }
                 if (includeNatives)
                 {
-                    if (natives.GetNativesString() is { } nativesString)
+                    if (natives?.GetNativesString() is { } nativesString)
                     {
                         var nativeClassifier = nativesString switch
                             {
@@ -544,9 +540,9 @@ public class MinecraftLauncher
                     string arch = PlatformInfo.Is64Bit ? "64" : "32";
                     var nativesString = PlatformInfo.OperatingSystem switch
                     {
-                        PlatformInfo.OS.Windows => (windows).Replace("${arch}", arch),
-                        PlatformInfo.OS.Linux => (linux).Replace("${arch}", arch),
-                        PlatformInfo.OS.MacOS => (osx).Replace("${arch}", arch),
+                        PlatformInfo.OS.Windows => windows.Replace("${arch}", arch),
+                        PlatformInfo.OS.Linux => linux.Replace("${arch}", arch),
+                        PlatformInfo.OS.MacOS => osx.Replace("${arch}", arch),
                         _ => null,
                     };
                     return nativesString != "" ? nativesString : null;

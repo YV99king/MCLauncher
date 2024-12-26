@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 
 namespace MCLauncher;
 
@@ -49,15 +50,15 @@ public static class PlatformInfo
     /// </summary>
     public static char PathSeparator => OperatingSystem == OS.Windows ? '\\' : '/';
 
-    public static System.Diagnostics.Process StartProcess(string command)
+    public static Process StartProcess(string command)
     {
         int argsIndex = command.IndexOf(' ');
 
-        System.Diagnostics.Process process = new()
+        Process process = new()
         {
             StartInfo = new()
             {
-                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+                WindowStyle = ProcessWindowStyle.Hidden,
                 FileName = command[..argsIndex],
                 Arguments = command[(argsIndex + 1)..]
             }
