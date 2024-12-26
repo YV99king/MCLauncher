@@ -114,31 +114,43 @@ public class MinecraftLauncher
     }
     private static string ReplaceArguments(string argstr, VersionJsonRoot versionJson, string minecraftPath, Options options)
     {
-        argstr = argstr.Replace("${natives_directory}", options.nativesDirectory);
-        argstr = argstr.Replace("${launcher_name}", !string.IsNullOrEmpty(options.launcherName) ? options.launcherName : Utils.LauncherName);
-        argstr = argstr.Replace("${launcher_version}", !string.IsNullOrEmpty(options.launcherVersion) ? options.launcherVersion : Utils.LauncherVersion);
-        argstr = argstr.Replace("${classpath}", GetLibrariesString(versionJson, minecraftPath));
-        argstr = argstr.Replace("${auth_player_name}", options.username);
-        argstr = argstr.Replace("${version_name}", versionJson.id);
-        argstr = argstr.Replace("${game_directory}", !string.IsNullOrEmpty(options.gameDirectory) ? options.gameDirectory : minecraftPath);
-        argstr = argstr.Replace("${assets_root}", Path.Combine(minecraftPath, "assets"));
-        argstr = argstr.Replace("${assets_index_name}", !string.IsNullOrEmpty(versionJson.assets) ? versionJson.assets : versionJson.id);
-        argstr = argstr.Replace("${auth_uuid}", options.uuid);
-        argstr = argstr.Replace("${auth_access_token}", options.token);
-        argstr = argstr.Replace("${user_type}", "msa");
-        argstr = argstr.Replace("${version_type}", versionJson.type);
-        argstr = argstr.Replace("${user_properties}", "{}");
-        argstr = argstr.Replace("${resolution_width}", options.resolutionWidth.ToString());
-        argstr = argstr.Replace("${resolution_height}", options.resolutionHeight.ToString());
-        argstr = argstr.Replace("${game_assets}", Path.Combine(minecraftPath, "assets", "virtual", "legacy"));
-        argstr = argstr.Replace("${auth_session}", options.token);
-        argstr = argstr.Replace("${library_directory}", Path.Combine(minecraftPath, "libraries"));
-        argstr = argstr.Replace("${classpath_separator}", PlatformInfo.ClasspathSeparator.ToString());
-        argstr = argstr.Replace("${quickPlayPath}", options.quickPlayPath);
-        argstr = argstr.Replace("${quickPlaySingleplayer}", options.quickPlaySingleplayer);
-        argstr = argstr.Replace("${quickPlayMultiplayer}", options.quickPlayMultiplayer);
-        argstr = argstr.Replace("${quickPlayRealms}", options.quickPlayRealms);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${natives_directory}", () => options.nativesDirectory);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${launcher_name}", () => !string.IsNullOrEmpty(options.launcherName) ? options.launcherName : Utils.LauncherName);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${launcher_version}", () => !string.IsNullOrEmpty(options.launcherVersion) ? options.launcherVersion : Utils.LauncherVersion);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${classpath}", () => GetLibrariesString(versionJson, minecraftPath));
+        ReplaceArgWithLazyEvaluation(ref argstr, "${auth_player_name}", () => options.username);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${version_name}", () => versionJson.id);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${game_directory}", () => !string.IsNullOrEmpty(options.gameDirectory) ? options.gameDirectory : minecraftPath);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${assets_root}", () => Path.Combine(minecraftPath, "assets"));
+        ReplaceArgWithLazyEvaluation(ref argstr, "${assets_index_name}", () => !string.IsNullOrEmpty(versionJson.assets) ? versionJson.assets : versionJson.id);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${auth_uuid}", () => options.uuid);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${auth_access_token}", () => options.token);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${user_type}", () => "msa");
+        ReplaceArgWithLazyEvaluation(ref argstr, "${version_type}", () => versionJson.type);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${user_properties}", () => "{}");
+        ReplaceArgWithLazyEvaluation(ref argstr, "${resolution_width}", () => options.resolutionWidth.ToString());
+        ReplaceArgWithLazyEvaluation(ref argstr, "${resolution_height}", () => options.resolutionHeight.ToString());
+        ReplaceArgWithLazyEvaluation(ref argstr, "${game_assets}", () => Path.Combine(minecraftPath, "assets", "virtual", "legacy"));
+        ReplaceArgWithLazyEvaluation(ref argstr, "${auth_session}", () => options.token);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${library_directory}", () => Path.Combine(minecraftPath, "libraries"));
+        ReplaceArgWithLazyEvaluation(ref argstr, "${classpath_separator}", () => PlatformInfo.ClasspathSeparator.ToString());
+        ReplaceArgWithLazyEvaluation(ref argstr, "${quickPlayPath}", () => options.quickPlayPath);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${quickPlaySingleplayer}", () => options.quickPlaySingleplayer);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${quickPlayMultiplayer}", () => options.quickPlayMultiplayer);
+        ReplaceArgWithLazyEvaluation(ref argstr, "${quickPlayRealms}", () => options.quickPlayRealms);
         return argstr;
+
+        static void ReplaceArgWithLazyEvaluation(ref string argstr, string oldValue, Func<string> newValueFactory)
+        {
+            int index;
+            string newValue;
+            if ((index = argstr.IndexOf(oldValue)) > -1)
+            {
+                newValue = newValueFactory();
+                do argstr = argstr.Remove(index, oldValue.Length).Insert(index, newValue);
+                while ((index = argstr.IndexOf(oldValue)) > -1);
+            }
+        }
     }
     private static string GetLibrariesString(VersionJsonRoot versionJson, string minecraftPath)
     {
@@ -147,8 +159,7 @@ public class MinecraftLauncher
         {
             if (!Rule.IsRuleListMatching(library.rules, default))
                 continue;
-            libString.Append(library.GetLibraryPath(minecraftPath, false) + PlatformInfo.ClasspathSeparator);
-            libString.Append(library.GetLibraryPath(minecraftPath, true) + PlatformInfo.ClasspathSeparator); //TODO: make sure no double seperator
+            libString.Append(string.Join(PlatformInfo.ClasspathSeparator, library.GetLibraryPath(minecraftPath, false), library.GetLibraryPath(minecraftPath, true), "")); //TODO: make sure no double seperator
         }
         if (versionJson.jar != null)
             libString.Append(Path.Combine(minecraftPath, "versions", versionJson.jar, $"{versionJson.jar}.jar"));
@@ -427,18 +438,18 @@ public class MinecraftLauncher
             throw new NotImplementedException(); //TODO: implement `InheritsFrom` method
         }
 
-        public record Arguments
+        public record class Arguments
         {
             public List<ArgumentInfo> game;
             public List<ArgumentInfo> jvm;
 
-            public record ArgumentInfo
+            public record class ArgumentInfo
             {
                 public List<Rule> rules;
                 public List<string> value;
             }
         }
-        public record AssetIndex
+        public record class AssetIndex
         {
             public string id;
             public string sha1;
@@ -446,12 +457,12 @@ public class MinecraftLauncher
             public int totalSize;
             public string url;
         }
-        public record JavaVersion
+        public record class JavaVersion
         {
             public string component;
             public int majorVersion;
         }
-        public record Library
+        public record class Library
         {
             public LibraryDownloads downloads;
             public Extract extract;
@@ -474,52 +485,43 @@ public class MinecraftLauncher
                 }
                 if (includeNatives)
                 {
-                    if (natives.GetNativesString() is { } nativesString && nativesString != string.Empty)
+                    if (natives.GetNativesString() is { } nativesString)
                     {
                         var nativeClassifier = nativesString switch
                             {
                                 "natives-linux" => downloads.classifiers.nativesLinux,
                                 "natives-osx" => downloads.classifiers.nativesOSX,
                                 "natives-windows" => downloads.classifiers.nativesWindows,
-                                _ => throw new NotImplementedException($"Unknown natives: {nativesString}")
+                                _ => null
                             };
 
                         if (nativeClassifier.path is { } nativePath)
                             return Path.Combine(path, "libraries", nativePath);
                         else
-                            return Path.Combine(libdir, $"{libname}-{version}{string.Concat(nameParts[3..].Select(s => "-" + s))}-{nativesString}.{fileEnding}");
+                            return Path.Combine(libdir, $"{libname}-{string.Join('-', nameParts[3..].Prepend(version))}-{nativesString}.{fileEnding}");
                     }
-                    return string.Empty;
+                    return null;
                 }
-                    /*switch (PlatformInfo.OperatingSystem)
-                    {
-                        case PlatformInfo.OS.Windows:
-                            return Path.Combine(libdir, $"{libname}-{version}-{natives.windows}.jar");
-                        case PlatformInfo.OS.Linux:
-                            return Path.Combine(libdir, $"{libname}-{version}-{natives.linux}.jar");
-                        case PlatformInfo.OS.MacOS:
-                            return Path.Combine(libdir, $"{libname}-{version}-{natives.osx}.jar");
-                    }*/
-                return Path.Combine(libdir, $"{libname}-{version}{string.Concat(nameParts[3..].Select(s => "-" + s))}.{fileEnding}");
+                return Path.Combine(libdir, $"{libname}-{string.Join('-', nameParts[3..].Prepend(version))}.{fileEnding}");
             } //TODO: cleanup, may return empty string
 
-            public record Extract
+            public record class Extract
             {
                 public List<string> exclude;
             }
-            public record LibraryDownloads
+            public record class LibraryDownloads
             {
                 public Artifact artifact;
                 public Classifiers classifiers;
 
-                public record Artifact
+                public record class Artifact
                 {
                     public string path;
                     public string sha1;
                     public int size;
                     public string url;
                 }
-                public record Classifiers
+                public record class Classifiers
                 {
                     public Artifact javadoc;
                     [JsonPropertyName("natives-linux")]
@@ -531,7 +533,7 @@ public class MinecraftLauncher
                     public Artifact sources;
                 }
             }
-            public record Natives
+            public record class Natives
             {
                 public string linux;
                 public string osx;
@@ -540,27 +542,28 @@ public class MinecraftLauncher
                 public string GetNativesString()
                 {
                     string arch = PlatformInfo.Is64Bit ? "64" : "32";
-                    return PlatformInfo.OperatingSystem switch
+                    var nativesString = PlatformInfo.OperatingSystem switch
                     {
-                        PlatformInfo.OS.Windows => (windows ?? string.Empty).Replace("${arch}", arch),
-                        PlatformInfo.OS.Linux => (linux ?? string.Empty).Replace("${arch}", arch),
-                        PlatformInfo.OS.MacOS => (osx ?? string.Empty).Replace("${arch}", arch),
-                        _ => string.Empty,
+                        PlatformInfo.OS.Windows => (windows).Replace("${arch}", arch),
+                        PlatformInfo.OS.Linux => (linux).Replace("${arch}", arch),
+                        PlatformInfo.OS.MacOS => (osx).Replace("${arch}", arch),
+                        _ => null,
                     };
+                    return nativesString != "" ? nativesString : null;
                 }
             }
         }
-        public record Logging
+        public record class Logging
         {
             public LoggingInfo client;
 
-            public record LoggingInfo
+            public record class LoggingInfo
             {
                 public string argument;
                 public File file;
                 public string type;
 
-                public record File
+                public record class File
                 {
                     public string id;
                     public string sha1;
@@ -569,19 +572,19 @@ public class MinecraftLauncher
                 }
             }
         }
-        public record MainExecutablesDownloads
+        public record class MainExecutablesDownloads
         {
             public SourceInfo client;
             public SourceInfo server;
 
-            public record SourceInfo
+            public record class SourceInfo
             {
                 public string sha1;
                 public int size;
                 public string url;
             }
         }
-        public record Rule
+        public record class Rule
         {
             public string action;
             public List<Feature> features;
@@ -641,7 +644,7 @@ public class MinecraftLauncher
                 return IsRuleMatch;
             }
 
-            public record OS
+            public record class OS
             {
                 public string name;
                 public string arch;
@@ -657,7 +660,7 @@ public class MinecraftLauncher
                 is_quick_play_realms
             }
         }
-        public record VersionJsonRoot
+        public record class VersionJsonRoot
         {
             public Arguments arguments;
             public AssetIndex assetIndex;
