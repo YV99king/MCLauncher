@@ -432,12 +432,22 @@ public class MinecraftLauncher
         public static VersionJsonRoot DeserializeJson(JsonNode json) =>
             JsonSerializer.Deserialize<VersionJsonRoot>(json, options);
 
-        public static VersionJsonRoot InheritJson(JsonNode originalJson, DirectoryInfo minecraftPath)
+        private static JsonNode InheritJson(JsonNode originalJson, DirectoryInfo minecraftPath)
         {
-            VersionJsonRoot inheritedJson;
-            using var inheritedJsonStream = new FileStream(Path.Combine(minecraftPath.FullName, "versions", originalJson["inheritsFrom"] + "", originalJson["inheritsFrom"] + ".json"), FileMode.Open);
-            inheritedJson = DeserializeJson(inheritedJsonStream);
-            throw new NotImplementedException(); //TODO: implement `InheritsFrom` method
+            JsonNode inheritedJson;
+            if (CheckVersionString((string)originalJson["inheritsFrom"]))
+            {
+                using (var inheritedJsonStream = new FileStream(Path.Combine(minecraftPath.FullName,
+                                                                             "versions",
+                                                                             (string)originalJson["inheritsFrom"],
+                                                                             originalJson["inheritsFrom"] + ".json"),
+                                                                FileMode.Open))
+                {
+                    inheritedJson = JsonNode.Parse(inheritedJsonStream);
+                }
+
+            }
+            
         }
 
         public record class Arguments
