@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using static MCLauncher.MinecraftLauncher.VersionJson;
 
@@ -155,7 +156,12 @@ public class MinecraftLauncher
         {
             if (!Rule.IsRuleListMatching(library.rules, default))
                 continue;
-            libString.Append(string.Join(PlatformInfo.ClasspathSeparator, library.GetLibraryPath(minecraftPath, false), library.GetLibraryPath(minecraftPath, true), "")); //TODO: make sure no double seperator
+            libString.Append(string.Join(PlatformInfo.ClasspathSeparator,
+                                         library.GetLibraryPath(minecraftPath, false),
+                                         library.GetLibraryPath(minecraftPath, true),
+                                         ""));
+            if (libString[^2] == ';' && libString[^1] == ';')
+                libString.Remove(libString.Length - 1, 1);
         }
         if (versionJson.jar != null)
             libString.Append(Path.Combine(minecraftPath, "versions", versionJson.jar, $"{versionJson.jar}.jar"));
@@ -423,13 +429,13 @@ public class MinecraftLauncher
             JsonSerializer.Deserialize<VersionJsonRoot>(json, options);
         public static VersionJsonRoot DeserializeJson(Stream stream) =>
             JsonSerializer.Deserialize<VersionJsonRoot>(stream, options);
-        public static VersionJsonRoot DeserializeJson(JsonDocument json) =>
+        public static VersionJsonRoot DeserializeJson(JsonNode json) =>
             JsonSerializer.Deserialize<VersionJsonRoot>(json, options);
 
-        public static VersionJsonRoot InheritJson(VersionJsonRoot originalJson, DirectoryInfo minecraftPath)
+        public static VersionJsonRoot InheritJson(JsonNode originalJson, DirectoryInfo minecraftPath)
         {
             VersionJsonRoot inheritedJson;
-            using var inheritedJsonStream = new FileStream(Path.Combine(minecraftPath.FullName, "versions", originalJson.inheritsFrom, originalJson.inheritsFrom + ".json"), FileMode.Open);
+            using var inheritedJsonStream = new FileStream(Path.Combine(minecraftPath.FullName, "versions", originalJson["inheritsFrom"] + "", originalJson["inheritsFrom"] + ".json"), FileMode.Open);
             inheritedJson = DeserializeJson(inheritedJsonStream);
             throw new NotImplementedException(); //TODO: implement `InheritsFrom` method
         }
