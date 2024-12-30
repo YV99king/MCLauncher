@@ -434,20 +434,36 @@ public class MinecraftLauncher
 
         private static JsonNode InheritJson(JsonNode originalJson, DirectoryInfo minecraftPath)
         {
-            JsonNode inheritedJson;
-            if (CheckVersionString((string)originalJson["inheritsFrom"]))
-            {
-                using (var inheritedJsonStream = new FileStream(Path.Combine(minecraftPath.FullName,
-                                                                             "versions",
-                                                                             (string)originalJson["inheritsFrom"],
-                                                                             originalJson["inheritsFrom"] + ".json"),
-                                                                FileMode.Open))
-                {
-                    inheritedJson = JsonNode.Parse(inheritedJsonStream);
-                }
+            if (!CheckVersionString((string)originalJson["inheritsFrom"]))
+                return originalJson;
 
+            JsonNode inheritedJson;
+            using (var inheritedJsonStream = new FileStream(Path.Combine(minecraftPath.FullName,
+                                                                            "versions",
+                                                                            (string)originalJson["inheritsFrom"],
+                                                                            originalJson["inheritsFrom"] + ".json"),
+                                                            FileMode.Open))
+            {
+                inheritedJson = JsonNode.Parse(inheritedJsonStream);
             }
-            
+
+            HashSet<string> includedLibraries = originalJson["libraries"].AsArray().Select(node => string.Join(':', ((string)node["name"]).Split(':')[..^2])).ToHashSet();
+            inheritedJson["libraries"] = new JsonArray((from lib in inheritedJson["libraries"].AsArray()
+                                                        where !includedLibraries.TryGetValue(string.Join(':', ((string)lib["name"]).Split(':')[..^2]), out _)
+                                                        select lib).ToArray());
+
+            foreach (var item in originalJson.AsObject())
+            {
+                if (item.Key == "libraries" || item.Key == "inheritsFrom")
+                    continue;
+
+                if (originalJson[item.Key] is JsonArray itemAsJsonArray)
+                    inheritedJson[item.Key] = new JsonArray([.. itemAsJsonArray, .. inheritedJson[item.Key] as JsonArray]);
+                else if (originalJson[item.Key] is JsonObject itemAsJsonObject)
+                {
+                    inheritedJson[item.Key] = new JsonObject([.. itemAsJsonObject, .. inheritedJson[item.Key] as JsonObject]);
+                }
+            }
         }
 
         public record class Arguments
