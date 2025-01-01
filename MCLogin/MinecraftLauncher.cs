@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -16,6 +17,12 @@ public class MinecraftLauncher
     private readonly Login _login;
     private readonly DirectoryInfo _minecraftPath;
     private readonly string _version;
+
+    public Login Login => _login;
+
+    public DirectoryInfo MinecraftPath => _minecraftPath;
+
+    public string Version => _version;
 
     public MinecraftLauncher(string version, Login login, DirectoryInfo minecraftPath)
     {
@@ -43,18 +50,18 @@ public class MinecraftLauncher
 
         options.nativesDirectory ??= Path.Combine(_minecraftPath.FullName, "versions", _version, "natives");
 
-        var versionJson = DeserializeJson(new FileStream(Path.Combine(_minecraftPath.FullName, "versions", _version, _version+".json"), FileMode.Open));
+        var versionJson = DeserializeJson(new FileStream(Path.Combine(_minecraftPath.FullName,
+                                                                      "versions",
+                                                                      _version,
+                                                                      _version + ".json"),
+                                                         FileMode.Open),
+                                          _minecraftPath);
 
         StringBuilder minecraftCommandBuilder = new();
         if (options.executablePath != null)
             minecraftCommandBuilder.Append($"{options.executablePath} ");
         else
-            minecraftCommandBuilder.Append(Path.Combine(_minecraftPath.FullName,
-                                                        "runtime",
-                                                        versionJson.javaVersion.component,
-                                                        PlatformInfo.JavaPlatformName,
-                                                        versionJson.javaVersion.component,
-                                                        "bin", "java") + " ");
+            minecraftCommandBuilder.Append(Path.Combine(_minecraftPath.FullName, "runtime", versionJson.javaVersion.component, PlatformInfo.JavaPlatformName, versionJson.javaVersion.component, "bin", "java") + " ");
         
         if (options.jvmArguments != null && options.jvmArguments.Count > 0)
             minecraftCommandBuilder.Append(string.Join(' ', options.jvmArguments) + ' ');
@@ -425,32 +432,35 @@ public class MinecraftLauncher
                 }
             }
         }
-        public static VersionJsonRoot DeserializeJson(string json) =>
-            JsonSerializer.Deserialize<VersionJsonRoot>(json, options);
-        public static VersionJsonRoot DeserializeJson(Stream stream) =>
-            JsonSerializer.Deserialize<VersionJsonRoot>(stream, options);
-        public static VersionJsonRoot DeserializeJson(JsonNode json) =>
-            JsonSerializer.Deserialize<VersionJsonRoot>(json, options);
+        public static VersionJsonRoot DeserializeJson(string json, DirectoryInfo minecraftPath) =>
+            DeserializeJson(JsonNode.Parse(json), minecraftPath);
+        public static VersionJsonRoot DeserializeJson(Stream stream, DirectoryInfo minecraftPath) =>
+            DeserializeJson(JsonNode.Parse(stream), minecraftPath);
+        public static VersionJsonRoot DeserializeJson(JsonNode json, DirectoryInfo minecraftPath)
+            => JsonSerializer.Deserialize<VersionJsonRoot>(InheritJson(json, minecraftPath), options);
 
         private static JsonNode InheritJson(JsonNode originalJson, DirectoryInfo minecraftPath)
         {
             if (!CheckVersionString((string)originalJson["inheritsFrom"]))
-                return originalJson;
+                return originalJson.DeepClone();
 
             JsonNode inheritedJson;
             using (var inheritedJsonStream = new FileStream(Path.Combine(minecraftPath.FullName,
-                                                                            "versions",
-                                                                            (string)originalJson["inheritsFrom"],
-                                                                            originalJson["inheritsFrom"] + ".json"),
+                                                                         "versions",
+                                                                         (string)originalJson["inheritsFrom"],
+                                                                         originalJson["inheritsFrom"] + ".json"),
                                                             FileMode.Open))
             {
-                inheritedJson = JsonNode.Parse(inheritedJsonStream);
+                inheritedJson = JsonNode.Parse(inheritedJsonStream, new JsonNodeOptions() { });
             }
 
-            HashSet<string> includedLibraries = originalJson["libraries"].AsArray().Select(node => string.Join(':', ((string)node["name"]).Split(':')[..^2])).ToHashSet();
-            inheritedJson["libraries"] = new JsonArray((from lib in inheritedJson["libraries"].AsArray()
-                                                        where !includedLibraries.TryGetValue(string.Join(':', ((string)lib["name"]).Split(':')[..^2]), out _)
-                                                        select lib).ToArray());
+            if (originalJson.AsObject().ContainsKey("libraries"))
+            {
+                HashSet<string> includedLibraries = originalJson["libraries"].AsArray().Select(node => string.Join(':', ((string)node["name"]).Split(':')[..^2])).ToHashSet();
+                inheritedJson["libraries"] = new JsonArray((from lib in inheritedJson["libraries"].AsArray()
+                                                            where !includedLibraries.TryGetValue(string.Join(':', ((string)lib["name"]).Split(':')[..^2]), out _)
+                                                            select lib).ToArray()); 
+            }
 
             foreach (var item in originalJson.AsObject())
             {
@@ -458,12 +468,18 @@ public class MinecraftLauncher
                     continue;
 
                 if (originalJson[item.Key] is JsonArray itemAsJsonArray)
-                    inheritedJson[item.Key] = new JsonArray([.. itemAsJsonArray, .. inheritedJson[item.Key] as JsonArray]);
+                    foreach (var jsonArray in itemAsJsonArray)
+                        (inheritedJson[item.Key] as JsonArray).Add(jsonArray.DeepClone());
                 else if (originalJson[item.Key] is JsonObject itemAsJsonObject)
-                {
-                    inheritedJson[item.Key] = new JsonObject([.. itemAsJsonObject, .. inheritedJson[item.Key] as JsonObject]);
-                }
+                    foreach (var jsonObject in itemAsJsonObject)
+                    {
+                        inheritedJson[item.Key][jsonObject.Key] = jsonObject.Value.DeepClone();
+                    }
+                else
+                    inheritedJson[item.Key] = item.Value.DeepClone() ?? inheritedJson[item.Key];
             }
+
+            return inheritedJson;
         }
 
         public record class Arguments
