@@ -1,34 +1,32 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using static MCLauncher.MinecraftLauncher.VersionJson;
 
 namespace MCLauncher;
 
-public class MinecraftLauncher
+public partial class MinecraftLauncher
 {
-    private readonly Login _login;
-    private readonly DirectoryInfo _minecraftPath;
-    private readonly string _version;
+    public Login Login { get; }
+    public DirectoryInfo MinecraftPath { get; }
+    public string Version { get; }
+    public MinecraftLoader Loader { get; }
 
-    public Login Login => _login;
-
-    public DirectoryInfo MinecraftPath => _minecraftPath;
-
-    public string Version => _version;
-
-    public MinecraftLauncher(string version, Login login, DirectoryInfo minecraftPath)
+    public MinecraftLauncher(string version, Login login, DirectoryInfo minecraftPath, MinecraftLoader loader = MinecraftLoader.Vanila)
     {
-        _login = login ?? throw new ArgumentNullException(nameof(login));
-        _minecraftPath = minecraftPath ?? throw new ArgumentNullException(nameof(minecraftPath));
-        _version = CheckVersionString(version) ? version : throw new ArgumentException("Invalid version ID", nameof(version));
+        Login = login ?? throw new ArgumentNullException(nameof(login));
+        MinecraftPath = minecraftPath ?? throw new ArgumentNullException(nameof(minecraftPath));
+        Version = CheckVersionString(version) ? version : throw new ArgumentException("Invalid version ID", nameof(version));
+        Loader = !string.IsNullOrWhiteSpace(loader.ToString()) ? loader : throw new ArgumentOutOfRangeException(nameof(loader));
     }
 
     public static bool CheckVersionString(string version)
@@ -36,47 +34,149 @@ public class MinecraftLauncher
         return !string.IsNullOrEmpty(version);
     }
 
-    public void InstallMinecraft()
+    public async void InstallMinecraft()
     {
+        if (Loader == MinecraftLoader.Vanila)
+        {
+            
+        }
+        else if (Loader != MinecraftLoader.custom)
+            throw new NotImplementedException();
 
+        VersionJsonRoot versionJson;
+        using (Stream versionJsonStream = new FileStream(Path.Combine(MinecraftPath.FullName,
+                                                                      "versions",
+                                                                      Version,
+                                                                      Version + ".json"),
+                                                         FileMode.Open))
+        {
+            var versionJsonNode = JsonNode.Parse(versionJsonStream);
+            if (versionJsonNode["inheritsFrom"] is { } inheritsFrom)
+            {
+                MinecraftLauncher inheritVersion = new((string)inheritsFrom, null, MinecraftPath);
+                inheritVersion.InstallMinecraft();
+            }
+            versionJson = DeserializeJson(versionJsonStream, MinecraftPath);
+        }
+
+        await InstallLibrariesAsync(versionJson.id, versionJson.libraries);
+    }
+    private async Task InstallLibrariesAsync(string vesionId, List<Library> libraries)
+    {
+        HttpClient client = new();
+
+        List<Task> tasks = new(libraries.Count);
+        foreach (var library in libraries)
+        {
+            tasks.Add(Task.Run(async () =>
+            {
+                if (!Rule.IsRuleListMatching(library.rules, default))
+                    return;
+
+                var libUrl = library.GetLibraryUrl(false);
+                var libUrlNative = library.GetLibraryUrl(true);
+                var libPath = library.GetLibraryPath(MinecraftPath.FullName, false);
+                var libPathNative = library.GetLibraryPath(MinecraftPath.FullName, true);
+
+                await Utils.DownloadFileAsync(libUrl, libPath, client);
+
+                if (library.downloads == null)
+                {
+                    if (library.extract != null)
+                    {
+                        ExtractNativesFile(libPathNative, Path.Combine(MinecraftPath.FullName, "versions", vesionId, "natives"), library.extract);
+                    }
+                    return;
+                }
+
+                if (library.downloads.artifact is { } artifact && !string.IsNullOrWhiteSpace(artifact.url) && artifact.path != null)
+                    await Utils.DownloadFileAsync(artifact.url, Path.Combine(MinecraftPath.FullName, "libraries", artifact.path), client);
+
+                if (libUrlNative != null)
+                {
+                    await Utils.DownloadFileAsync(libUrlNative, libPathNative, client);
+                    ExtractNativesFile(libPathNative, Path.Combine(MinecraftPath.FullName, "versions", vesionId, "natives"), library.extract);
+                }
+
+                static void ExtractNativesFile(string filename, string extractPath, Library.Extract extract)
+                {
+                    Directory.CreateDirectory(extractPath);
+
+                    using var zipStream = new FileStream(filename, FileMode.Open);
+                    using var zip = new ZipArchive(zipStream);
+                    foreach (var entry in zip.Entries)
+                    {
+                        bool isExcluded = false;
+                        foreach (var excluded in extract.exclude)
+                            if (entry.Name.StartsWith(excluded))
+                            {
+                                isExcluded = true;
+                                break;
+                            }
+                        if (!isExcluded)
+                            entry.ExtractToFile(Path.Combine(extractPath, entry.Name));
+                    }
+                }
+            }));
+        }
+        await Task.WhenAll(tasks);
+    }
+    private async Task InstallAssetsAsync(VersionJsonRoot versionJson)
+    {
+        HttpClient client = new();
+
+        await Utils.DownloadFileAsync(versionJson.assetIndex.url, Path.Combine(MinecraftPath.FullName, "assets", "indexes", versionJson.assets + ".json"), client);
+
+        List<Task> tasks = new(libraries.Count);
+        foreach (var library in libraries)
+        {
+            tasks.Add(Task.Run(async () =>
+            {
+
+            }));
+        }
+        await Task.WhenAll(tasks);
     }
 
     public Process LaunchMinecraft(Options options)
     {
-        var loginInfo = _login.GetProfileInfo();
-        options.token ??= _login.AccessToken;
+        var loginInfo = Login.GetProfileInfo();
+        options.token ??= Login.AccessToken;
         options.uuid ??= loginInfo.id;
         options.username ??= loginInfo.name;
 
-        options.nativesDirectory ??= Path.Combine(_minecraftPath.FullName, "versions", _version, "natives");
+        options.nativesDirectory ??= Path.Combine(MinecraftPath.FullName, "versions", Version, "natives");
 
-        var versionJson = DeserializeJson(new FileStream(Path.Combine(_minecraftPath.FullName,
+        VersionJsonRoot versionJson;
+        using (Stream versionJsonStream = new FileStream(Path.Combine(MinecraftPath.FullName,
                                                                       "versions",
-                                                                      _version,
-                                                                      _version + ".json"),
-                                                         FileMode.Open),
-                                          _minecraftPath);
+                                                                      Version,
+                                                                      Version + ".json"),
+                                                         FileMode.Open))
+        {
+            versionJson = DeserializeJson(versionJsonStream, MinecraftPath); 
+        }
 
         StringBuilder minecraftCommandBuilder = new();
         if (options.executablePath != null)
             minecraftCommandBuilder.Append($"{options.executablePath} ");
         else
-            minecraftCommandBuilder.Append(Path.Combine(_minecraftPath.FullName, "runtime", versionJson.javaVersion.component, PlatformInfo.JavaPlatformName, versionJson.javaVersion.component, "bin", "java") + " ");
+            minecraftCommandBuilder.Append(Path.Combine(MinecraftPath.FullName, "runtime", versionJson.javaVersion.component, PlatformInfo.JavaPlatformName, versionJson.javaVersion.component, "bin", "java") + " ");
         
         if (options.jvmArguments != null && options.jvmArguments.Count > 0)
             minecraftCommandBuilder.Append(string.Join(' ', options.jvmArguments) + ' ');
         if (versionJson.arguments.jvm != null)
-            minecraftCommandBuilder.Append(ParseArgumentsList(versionJson.arguments.jvm, options, versionJson, _minecraftPath.FullName));
+            minecraftCommandBuilder.Append(ParseArgumentsList(versionJson.arguments.jvm, options, versionJson, MinecraftPath.FullName));
         else
         {
-            minecraftCommandBuilder.Append("-Djava.library.path=").Append(Path.Combine(_minecraftPath.FullName, "versions", versionJson.id, "natives") + ' ');
+            minecraftCommandBuilder.Append("-Djava.library.path=").Append(Path.Combine(MinecraftPath.FullName, "versions", versionJson.id, "natives") + ' ');
             minecraftCommandBuilder.Append("-cp ");
-            minecraftCommandBuilder.Append(GetLibrariesString(versionJson, _minecraftPath.FullName));
+            minecraftCommandBuilder.Append(GetLibrariesString(versionJson, MinecraftPath.FullName));
         }
 
         if (options.enableLoggingConfig && versionJson.logging.client != null)
             minecraftCommandBuilder.Append(versionJson.logging.client.argument.Replace("${path}",
-                                                                                       Path.Combine(_minecraftPath.FullName,
+                                                                                       Path.Combine(MinecraftPath.FullName,
                                                                                                     "assets",
                                                                                                     "log_configs",
                                                                                                     versionJson.logging.client.file.id)));
@@ -84,9 +184,9 @@ public class MinecraftLauncher
         minecraftCommandBuilder.Append(versionJson.mainClass + ' ');
 
         if (versionJson.minecraftArguments != null)
-            minecraftCommandBuilder.Append(ParseArgumentsString(versionJson.minecraftArguments, options, versionJson, _minecraftPath.FullName));
+            minecraftCommandBuilder.Append(ParseArgumentsString(versionJson.minecraftArguments, options, versionJson, MinecraftPath.FullName));
         else
-            minecraftCommandBuilder.Append(ParseArgumentsList(versionJson.arguments.game, options, versionJson, _minecraftPath.FullName));
+            minecraftCommandBuilder.Append(ParseArgumentsList(versionJson.arguments.game, options, versionJson, MinecraftPath.FullName));
 
         if (options.server != null)
         {
@@ -519,7 +619,7 @@ public class MinecraftLauncher
             {
                 var nameParts = name.Split(':');
                 string basePath = nameParts[0], libname = nameParts[1], version = nameParts[2];
-                string libdir = Path.Combine(path, "libraries", Path.Combine(basePath.Split('.')), libname, version);
+                string libdir = Path.Combine([path, "libraries", .. basePath.Split('.'), libname, version]);
                 int index;
                 string fileEnding = "jar";
                 if ((index = version.IndexOf('@')) != -1)
@@ -532,22 +632,57 @@ public class MinecraftLauncher
                     if (natives?.GetNativesString() is { } nativesString)
                     {
                         var nativeClassifier = nativesString switch
-                            {
-                                "natives-linux" => downloads.classifiers.nativesLinux,
-                                "natives-osx" => downloads.classifiers.nativesOSX,
-                                "natives-windows" => downloads.classifiers.nativesWindows,
-                                _ => null
-                            };
+                        {
+                            "natives-linux" => downloads.classifiers.nativesLinux,
+                            "natives-osx" => downloads.classifiers.nativesOSX,
+                            "natives-windows" => downloads.classifiers.nativesWindows,
+                            _ => null
+                        };
 
                         if (nativeClassifier.path is { } nativePath)
                             return Path.Combine(path, "libraries", nativePath);
                         else
-                            return Path.Combine(libdir, $"{libname}-{string.Join('-', nameParts[3..].Prepend(version))}-{nativesString}.{fileEnding}");
+                            return Path.Combine(libdir, $"{string.Join('-', [libname, version, .. nameParts[3..], nativesString])}.{fileEnding}");
                     }
                     return null;
                 }
-                return Path.Combine(libdir, $"{libname}-{string.Join('-', nameParts[3..].Prepend(version))}.{fileEnding}");
+                return Path.Combine(libdir, $"{string.Join('-', [libname, version, .. nameParts[3..]])}.{fileEnding}");
             } //TODO: cleanup, may return empty string
+            public string GetLibraryUrl(bool includeNatives)
+            {
+                string baseUrl = url.TrimEnd('/');
+                if (url == null)
+                    baseUrl = "https://libraries.minecraft.net";
+
+                var nameParts = name.Split(':');
+                string basePath = nameParts[0], libname = nameParts[1], version = nameParts[2];
+                string libUrl = string.Join('/', [baseUrl, "libraries", .. basePath.Split('.'), libname, version]);
+                int index;
+                string fileEnding = "jar";
+                if ((index = version.IndexOf('@')) != -1)
+                {
+                    fileEnding = version[(index + 1)..];
+                    version = version[..index];
+                }
+                if (includeNatives)
+                {
+                    if (natives?.GetNativesString() is { } nativesString)
+                    {
+                        var nativeClassifier = nativesString switch
+                        {
+                            "natives-linux" => downloads.classifiers.nativesLinux,
+                            "natives-osx" => downloads.classifiers.nativesOSX,
+                            "natives-windows" => downloads.classifiers.nativesWindows,
+                            _ => null
+                        };
+
+                        if (nativeClassifier.url is { } nativePath)
+                            return string.Join('/', libUrl, nativePath); 
+                    }
+                    return null;
+                }
+                return string.Join('/', libUrl, $"{string.Join('-', [libname, version ,.. nameParts[3..]])}.{fileEnding}");
+            }
 
             public record class Extract
             {

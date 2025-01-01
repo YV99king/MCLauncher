@@ -17,7 +17,9 @@ public static class Program
         Console.Write("password: "); var password = Console.ReadLine();
         var loginInfo = new Login(username, password);
 
-        var minecraftV1_21 = new MinecraftLauncher("1.21", loginInfo, new(@"..\..\..\..\.minecraft"));
+        Console.Write("version: "); var version = Console.ReadLine();
+        var minecraftV1_21 = new MinecraftLauncher("1.21", loginInfo, new(@"..\..\..\..\.minecraft"), MinecraftLoader.Vanila);
+        minecraftV1_21.InstallMinecraft();
         var mcProc = minecraftV1_21.LaunchMinecraft(new());
 
         Console.WriteLine("aftermath:"); // from here on it's just information checks (windows only)
@@ -45,5 +47,21 @@ public static class Program
         }
 
         Console.WriteLine($"has double seperator: {hasDoubleSeperator}");
+
+        Console.Write("clean up (y/n): "); bool? clean = Console.ReadLine() switch
+        {
+            "y" => true,
+            "Y" => true,
+            "n" => false,
+            "N" => false,
+            _ => null
+        };
+
+        if (clean == true)
+            Directory.Delete(@"C:\Users\user\source\repos\MCLogin\.minecraft", true);
+        else if (clean == false)
+            Console.WriteLine("Cleanup aborted.");
+        else
+            Console.WriteLine("invalid input: " + clean);
     }
 }
