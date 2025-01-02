@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
 
@@ -9,25 +10,41 @@ internal class Utils
     public static string LauncherName => "MCLauncher";
     public static string LauncherVersion => "alpha";
 
-    public static async Task<bool> DownloadFileAsync(string url, string path, HttpClient client, bool overwrite = false, bool throwOnDownloadFailed = false)
+    public static async Task<bool> DownloadFileAsync(HttpClient client, string url, string path, string sha1 = "", int retries = 5, bool overwrite = false)
     {
-        using HttpResponseMessage response = await client.GetAsync(url);
-        if (throwOnDownloadFailed && !response.IsSuccessStatusCode)
+        while (retries > 0)
         {
-            if (throwOnDownloadFailed)
-                throw new HttpRequestException($"Failed to download {url}. Status code: {response.StatusCode}");
-            return false;
-        }
+            using HttpResponseMessage response = await client.GetAsync(url);
+            if (!response.IsSuccessStatusCode)
+            {
+                retries--;
+                continue;
+            }
 
-        if (!overwrite && File.Exists(path))
-        {
-            if (throwOnDownloadFailed)
-                throw new IOException($"Downloaded file already exists path:{path}, url:{url}");
-            return false; 
-        }
-        using FileStream fs = File.Create(path);
-        await response.Content.CopyToAsync(fs);
+            path = Path.GetFullPath(path);
+            if (!overwrite && File.Exists(path))
+            {
+                return false;
+            }
+            if (!Directory.Exists(Path.GetDirectoryName(path)))
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+            using FileStream fs = File.Create(path);
+            await response.Content.CopyToAsync(fs);
 
-        return true;
+            if (!string.IsNullOrWhiteSpace(sha1))
+            {
+                fs.Position = 0;
+                var computedHash = Convert.ToString(System.Security.Cryptography.SHA1.Create().ComputeHash(fs));
+                if (computedHash != sha1)
+                {
+                    overwrite = true;
+                    retries--;
+                    continue;
+                }
+            }
+
+            return true;
+        }
+        return false;
     }
 }
