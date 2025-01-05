@@ -53,28 +53,33 @@ public partial class MinecraftLauncher
             var versionJsonNode = JsonNode.Parse(versionJsonStream);
             if (versionJsonNode["inheritsFrom"] is { } inheritsFrom)
             {
-                MinecraftLauncher inheritVersion = new((string)inheritsFrom, null, MinecraftPath); //TODO: fix login null
+                MinecraftLauncher inheritVersion = new((string)inheritsFrom, null, MinecraftPath); //TODO: fix login is null
                 await inheritVersion.InstallMinecraft();
             }
             versionJson = DeserializeJson(versionJsonNode, MinecraftPath);
         }
 
-        await InstallLibrariesAsync(versionJson.id, versionJson.libraries);
-        await InstallAssetsAsync(versionJson);
+        List<Task> tasks = [];
+        tasks.Add(InstallLibrariesAsync(versionJson.id, versionJson.libraries));
+        tasks.Add(InstallAssetsAsync(versionJson));
 
         HttpClient client = new();
 
         if (versionJson.logging.client != null)
-            await Utils.DownloadFileAsync(client,
+            tasks.Add(Utils.DownloadFileAsync(client,
                                           url: versionJson.logging.client.file.url,
                                           path: Path.Combine(MinecraftPath.FullName, "assets", "log_configs", versionJson.logging.client.file.id),
-                                          sha1: versionJson.logging.client.file.sha1);
+                                          sha1: versionJson.logging.client.file.sha1,
+                                          log: Console.WriteLine));
 
         if (versionJson.downloads.client != null)
-            await Utils.DownloadFileAsync(client,
+            tasks.Add(Utils.DownloadFileAsync(client,
                                           url: versionJson.downloads.client.url,
                                           path: Path.Combine(MinecraftPath.FullName, "versions", versionJson.id, versionJson.id + ".jar"),
-                                          sha1: versionJson.downloads.client.sha1);
+                                          sha1: versionJson.downloads.client.sha1,
+                                          log: Console.WriteLine));
+
+        await Task.WhenAll(tasks);
     }
     private async Task InstallLibrariesAsync(string vesionId, List<Library> libraries)
     {
@@ -83,17 +88,20 @@ public partial class MinecraftLauncher
         List<Task> tasks = new(libraries.Count);
         foreach (var library in libraries)
         {
-            tasks.Add(Task.Run(async () =>
+            if (!Rule.IsRuleListMatching(library.rules, default))
+                continue;
+
+            tasks.Add(Task.Run(() =>
             {
-                if (!Rule.IsRuleListMatching(library.rules, default))
-                    return;
 
                 var libUrl = library.GetLibraryUrl(false, out var libSha1);
                 var libUrlNative = library.GetLibraryUrl(true, out var libSha1Native);
                 var libPath = library.GetLibraryPath(MinecraftPath.FullName, false);
                 var libPathNative = library.GetLibraryPath(MinecraftPath.FullName, true);
 
-                await Utils.DownloadFileAsync(client, libUrl, libPath);
+                List<Task> tasks = [];
+
+                tasks.Add(Utils.DownloadFileAsync(client, libUrl, libPath, log: Console.WriteLine));
 
                 if (library.downloads == null)
                 {
@@ -101,17 +109,19 @@ public partial class MinecraftLauncher
                     {
                         ExtractNativesFile(libPathNative, Path.Combine(MinecraftPath.FullName, "versions", vesionId, "natives"), library.extract);
                     }
-                    return;
+                    return Task.WhenAll(tasks);
                 }
 
                 if (library.downloads.artifact is { } artifact && !string.IsNullOrWhiteSpace(artifact.url) && artifact.path != null)
-                    await Utils.DownloadFileAsync(client, artifact.url, Path.Combine(MinecraftPath.FullName, "libraries", artifact.path), libSha1, overwrite: true);
+                    tasks.Add(Utils.DownloadFileAsync(client, artifact.url, Path.Combine(MinecraftPath.FullName, "libraries", artifact.path), libSha1, overwrite: true, log: Console.WriteLine));
 
                 if (libUrlNative != null)
                 {
-                    await Utils.DownloadFileAsync(client, libUrlNative, libPathNative, libSha1Native, overwrite: true);
-                    ExtractNativesFile(libPathNative, Path.Combine(MinecraftPath.FullName, "versions", vesionId, "natives"), library.extract);
+                    tasks.Add(Utils.DownloadFileAsync(client, libUrlNative, libPathNative, libSha1Native, overwrite: true, log: Console.WriteLine).ContinueWith(task =>
+                        ExtractNativesFile(libPathNative, Path.Combine(MinecraftPath.FullName, "versions", vesionId, "natives"), library.extract)));
                 }
+
+                return Task.WhenAll(tasks);
 
                 static void ExtractNativesFile(string filename, string extractPath, Library.Extract extract)
                 {
@@ -140,26 +150,37 @@ public partial class MinecraftLauncher
     {
         HttpClient client = new();
 
-        await Utils.DownloadFileAsync(client, versionJson.assetIndex.url, Path.Combine(MinecraftPath.FullName, "assets", "indexes", versionJson.assets + ".json"));
-        JsonNode[] assets;
+        Utils.DownloadFileAsync(client, versionJson.assetIndex.url, Path.Combine(MinecraftPath.FullName, "assets", "indexes", versionJson.assets + ".json"), log: Console.WriteLine);
+        KeyValuePair<string, JsonNode>[] assets;
         using (var assetIndexStream = new FileStream(Path.Combine(MinecraftPath.FullName, "assets", "indexes", versionJson.assets + ".json"), FileMode.Open))
         {
-            assets = [.. (JsonNode.Parse(assetIndexStream)["objects"].AsObject() as IDictionary<string, JsonNode>).Values];
+            assets = [.. JsonNode.Parse(assetIndexStream)["objects"].AsObject()];
         }
 
         List<Task> tasks = new(assets.Length);
         foreach (var asset in assets)
-            tasks.Add(Task.Run(async () =>
-                await Utils.DownloadFileAsync(client,
-                                              url: string.Join('/', "https://resources.download.minecraft.net",
-                                                                     ((string)asset["hash"])[..1],
-                                                                     asset["hash"]),
-                                              path: Path.Combine(MinecraftPath.FullName,
-                                                                 "assets",
-                                                                 "objects",
-                                                                 ((string)asset["hash"])[..1],
-                                                                 (string)asset["hash"]),
-                                              sha1: (string)asset["hash"])));
+            tasks.Add(Task.Run(() =>
+            {
+                try
+                {
+                    return Utils.DownloadFileAsync(client,
+                                                   url: string.Join('/', "https://resources.download.minecraft.net",
+                                                                         ((string)asset.Value["hash"])[..2],
+                                                                         (string)asset.Value["hash"]),
+                                                   path: Path.Combine(MinecraftPath.FullName,
+                                                                      "assets",
+                                                                      "objects",
+                                                                      ((string)asset.Value["hash"])[..2],
+                                                                      (string)asset.Value["hash"]),
+                                                   sha1: (string)asset.Value["hash"],
+                                                   log: Console.WriteLine);
+
+                }
+                catch (Exception)
+                {
+                    return Task.FromResult(false);
+                }
+            }));
         await Task.WhenAll(tasks);
     }
 
