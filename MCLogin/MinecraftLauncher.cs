@@ -76,7 +76,7 @@ public partial class MinecraftLauncher
             tasks.Add(Utils.DownloadFileAsync(client,
                                           url: versionJson.downloads.client.url,
                                           path: Path.Combine(MinecraftPath.FullName, "versions", versionJson.id, versionJson.id + ".jar"),
-                                          sha1: versionJson.downloads.client.sha1,
+                                          //sha1: versionJson.downloads.client.sha1,
                                           log: Console.WriteLine));
 
         await Task.WhenAll(tasks);
@@ -150,7 +150,7 @@ public partial class MinecraftLauncher
     {
         HttpClient client = new();
 
-        Utils.DownloadFileAsync(client, versionJson.assetIndex.url, Path.Combine(MinecraftPath.FullName, "assets", "indexes", versionJson.assets + ".json"), log: Console.WriteLine);
+        await Utils.DownloadFileAsync(client, versionJson.assetIndex.url, Path.Combine(MinecraftPath.FullName, "assets", "indexes", versionJson.assets + ".json"), log: Console.WriteLine);
         KeyValuePair<string, JsonNode>[] assets;
         using (var assetIndexStream = new FileStream(Path.Combine(MinecraftPath.FullName, "assets", "indexes", versionJson.assets + ".json"), FileMode.Open))
         {
