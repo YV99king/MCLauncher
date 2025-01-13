@@ -45,10 +45,11 @@ public partial class MinecraftLauncher
 
         VersionJsonRoot versionJson;
         using (var versionJsonStream = new FileStream(Path.Combine(MinecraftPath.FullName,
-                                                                      "versions",
-                                                                      Version,
-                                                                      Version + ".json"),
-                                                         FileMode.Open))
+                                                                   "versions",
+                                                                   Version,
+                                                                   Version + ".json"),
+                                                      FileMode.Open,
+                                                      FileAccess.Read))
         {
             var versionJsonNode = JsonNode.Parse(versionJsonStream);
             if (versionJsonNode["inheritsFrom"] is { } inheritsFrom)
@@ -76,7 +77,7 @@ public partial class MinecraftLauncher
             tasks.Add(Utils.DownloadFileAsync(client,
                                           url: versionJson.downloads.client.url,
                                           path: Path.Combine(MinecraftPath.FullName, "versions", versionJson.id, versionJson.id + ".jar"),
-                                          //sha1: versionJson.downloads.client.sha1,
+                                          sha1: versionJson.downloads.client.sha1,
                                           log: Console.WriteLine));
 
         await Task.WhenAll(tasks);
@@ -198,7 +199,8 @@ public partial class MinecraftLauncher
                                                                       "versions",
                                                                       Version,
                                                                       Version + ".json"),
-                                                         FileMode.Open))
+                                                         FileMode.Open,
+                                                         FileAccess.Read))
         {
             versionJson = DeserializeJson(versionJsonStream, MinecraftPath); 
         }
