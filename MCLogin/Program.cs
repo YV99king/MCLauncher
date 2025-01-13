@@ -12,6 +12,8 @@ public static class Program
         using HttpClientHandler handler = new();
         handler.AllowAutoRedirect = true;
         using HttpClient client = new(handler);
+        
+        //goto clean;
 
         Console.Write("username: "); var username = Console.ReadLine();
         Console.Write("password: "); var password = Console.ReadLine();
@@ -50,6 +52,7 @@ public static class Program
 
         Console.WriteLine($"has double seperator: {hasDoubleSeperator}");
 
+        clean:
         Console.Write("clean up (y/n): "); bool? clean = Console.ReadLine() switch
         {
             "y" => true,
@@ -60,7 +63,20 @@ public static class Program
         };
 
         if (clean == true)
-            Directory.Delete(@"C:\Users\user\source\repos\MCLogin\.minecraft", true);
+        {
+            foreach (var dir in Directory.EnumerateFiles(@"..\..\..\..\.minecraft", "*", SearchOption.AllDirectories))
+                try
+                {
+                    File.Delete(dir);
+                }
+                catch (Exception) { } // ignore protected files
+            foreach (var dir in Directory.EnumerateDirectories(@"..\..\..\..\.minecraft", "*", SearchOption.AllDirectories))
+                try
+                {
+                    Directory.Delete(dir, true);
+                }
+                catch (Exception) { } // ignore protected directories
+        }
         else if (clean == false)
             Console.WriteLine("Cleanup aborted.");
         else
