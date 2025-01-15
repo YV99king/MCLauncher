@@ -52,7 +52,9 @@ public static class Program
 
         Console.WriteLine($"has double seperator: {hasDoubleSeperator}");
 
-        clean:
+#pragma warning disable CS0164 // This label has not been referenced
+    clean:
+#pragma warning restore CS0164 // This label has not been referenced
         Console.Write("clean up (y/n): "); bool? clean = Console.ReadLine() switch
         {
             "y" => true,

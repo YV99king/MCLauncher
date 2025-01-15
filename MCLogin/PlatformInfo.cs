@@ -50,7 +50,7 @@ public static class PlatformInfo
     /// </summary>
     public static char PathSeparator => OperatingSystem == OS.Windows ? '\\' : '/';
 
-    public static Process StartProcess(string command)
+    public static Process StartProcess(string command, bool redirectStandardStream = true)
     {
         int argsIndex = command.IndexOf(' ');
 
@@ -63,6 +63,15 @@ public static class PlatformInfo
                 Arguments = command[(argsIndex + 1)..]
             }
         };
+
+        if (redirectStandardStream)
+        {
+            process.StartInfo.RedirectStandardInput = true;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
+            process.StartInfo.UseShellExecute = false;
+        }
+
         return process.Start() ? process : null;
     }
 

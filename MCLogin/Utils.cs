@@ -14,7 +14,7 @@ internal class Utils
 
     public static async Task<bool> DownloadFileAsync(HttpClient client, string url, string path, string sha1 = "", int retries = 5, bool overwrite = false, Action<string> log = null)
     {
-        log ??= _ => { };
+        log ??= Console.WriteLine; // TODO: make empty when debugging done
 
         string computedHash = "";
         if (File.Exists(path) && IsValidHash(sha1))

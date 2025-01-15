@@ -89,6 +89,7 @@ public partial class MinecraftLauncher
         List<Task> tasks = [];
         tasks.Add(InstallLibrariesAsync(versionJson.id, versionJson.libraries));
         tasks.Add(InstallAssetsAsync(versionJson));
+        tasks.Add(InstallJavaRuntimesAsync(versionJson.javaVersion));
 
         if (versionJson.logging.client != null)
             tasks.Add(Utils.DownloadFileAsync(client,
@@ -206,6 +207,69 @@ public partial class MinecraftLauncher
                     return Task.FromResult(false);
                 }
             }));
+        await Task.WhenAll(tasks);
+    }
+    private async Task InstallJavaRuntimesAsync(JavaVersion javaVersion)
+    {
+        const string runtimesManifestUrl = "https://piston-meta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json";
+        HttpClient client = new();
+
+        if (!File.Exists(Path.Combine(MinecraftPath.FullName, "versions", "jre_manifest.json")))
+            await Utils.DownloadFileAsync(client,
+                                          url: runtimesManifestUrl,
+                                          path: Path.Combine(MinecraftPath.FullName, "versions", "jre_manifest.json"));
+        JsonNode runtimesManifestJson;
+        using (var runtimesManifestStream = new FileStream(Path.Combine(MinecraftPath.FullName, "versions", "jre_manifest.json"), FileMode.Open, FileAccess.Read))
+        {
+            runtimesManifestJson = JsonNode.Parse(runtimesManifestStream);
+        }
+        if (runtimesManifestJson[PlatformInfo.JavaPlatformName][javaVersion.component][0] == null)
+            throw new Exception($"No JRE for Java {javaVersion.component} found.");
+
+        await Utils.DownloadFileAsync(client,
+                                      url: (string)runtimesManifestJson[PlatformInfo.JavaPlatformName][javaVersion.component][0]["manifest"]["url"],
+                                      path: Path.Combine(MinecraftPath.FullName, "runtime", javaVersion.component, PlatformInfo.JavaPlatformName, "manifest.tmp"),
+                                      sha1: (string)runtimesManifestJson[PlatformInfo.JavaPlatformName][javaVersion.component][0]["manifest"]["sha1"]);
+        JsonNode jvmManifestJson;
+        using (var jvmManifestStream = new FileStream(Path.Combine(MinecraftPath.FullName, "runtime", javaVersion.component, PlatformInfo.JavaPlatformName, "manifest.tmp"), FileMode.Open, FileAccess.Read))
+        {
+            jvmManifestJson = JsonNode.Parse(jvmManifestStream);
+        }
+
+        List<Task> tasks = [];
+        List<(string path, string sha1)> jvmFiles = [];
+        string basePath = Path.Combine(MinecraftPath.FullName, "runtime", javaVersion.component, PlatformInfo.JavaPlatformName, javaVersion.component);
+        foreach (var (filePath, fileInfo) in jvmManifestJson["files"].AsObject())
+        {
+            if ((string)fileInfo["type"] == "file")
+                tasks.Add(Utils.DownloadFileAsync(client,
+                                                  url: (string)fileInfo["downloads"]["raw"]["url"],
+                                                  path: basePath + PlatformInfo.PathSeparator + filePath,
+                                                  sha1: (string)fileInfo["downloads"]["raw"]["sha1"]).ContinueWith(t =>
+                                                  {
+                                                      if ((bool)fileInfo["executable"])
+                                                          try
+                                                          {
+                                                              PlatformInfo.StartProcess($"chmod +x {basePath + PlatformInfo.PathSeparator + filePath}");
+                                                          }
+                                                          catch (Exception) { }
+                                                      jvmFiles.Add((basePath + PlatformInfo.PathSeparator + filePath, (string)fileInfo["downloads"]["raw"]["sha1"]));
+                                                  }));
+            else if ((string)fileInfo["type"] == "link")
+                try
+                {
+                    Directory.CreateSymbolicLink(basePath + PlatformInfo.PathSeparator + filePath, (string)fileInfo["target"]);
+                }
+                catch (Exception) { }
+        }
+
+        tasks.Add(File.WriteAllTextAsync(Path.Combine(MinecraftPath.FullName, "runtime", javaVersion.component, PlatformInfo.JavaPlatformName, ".version"),
+                                         (string)runtimesManifestJson[PlatformInfo.JavaPlatformName][javaVersion.component][0]["version"]["name"]));
+
+        tasks.Add(File.WriteAllLinesAsync(Path.Combine(MinecraftPath.FullName, "runtime", javaVersion.component, PlatformInfo.JavaPlatformName, $"{javaVersion.component}.sha1"),
+                                          from file in jvmFiles
+                                          select $"{file.path} /#// {file.sha1} {File.GetCreationTimeUtc(file.path).Ticks * 100 /* a tick is 100 nanoseconds */ }"));
+
         await Task.WhenAll(tasks);
     }
 
