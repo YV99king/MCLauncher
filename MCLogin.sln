@@ -2,7 +2,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.33414.496
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MCLogin", "MCLogin\MCLogin.csproj", "{41A069C1-E23B-4A94-BCC5-7F5819B1CC58}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MCLogin", "MCLogin\MCLauncher.csproj", "{41A069C1-E23B-4A94-BCC5-7F5819B1CC58}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{A8C4CEF5-E178-454D-BB58-060B1109846E}"
 	ProjectSection(SolutionItems) = preProject

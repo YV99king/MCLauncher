@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace MCLauncher;
@@ -12,7 +13,7 @@ namespace MCLauncher;
 /// </summary>
 public partial class Login
 {
-    private readonly HttpClient _client;
+    private static readonly JsonSerializerOptions s_serializerOptionsIncludeFields = new() { IncludeFields = true };
 
     private DateTime accessTokenExpiry;
     private readonly string email;
@@ -26,12 +27,6 @@ public partial class Login
     /// <param name="password">the password of the account</param>
     public Login(string email, string password)
     {
-        HttpClientHandler handler = new()
-        {
-            AllowAutoRedirect = true
-        };
-        _client = new(handler);
-
         this.email = email;
         this.password = password;
         token = GenerateAccessToken(email, password, out accessTokenExpiry);
@@ -69,20 +64,25 @@ public partial class Login
     /// <param name="password">the account's password</param>
     /// <param name="accessTokenExpiry">where to save the bearer token's expiry date</param>
     /// <returns>Minecraft bearer token</returns>
-    public string GenerateAccessToken(string email, string password, out DateTime accessTokenExpiry)
+    public static string GenerateAccessToken(string email, string password, out DateTime accessTokenExpiry)
     {
-        (string sFTTag, string urlPost) = GetPPFTAndUrlPost();
-        string msAccessToken = GetMSLoginInfo(email, password, sFTTag, urlPost)["access_token"];
-        (string xboxLiveToken, ulong xboxLiveUserHash) = GetXboxLiveLogin(msAccessToken);
-        string HSTSToken = GetHSTSToken(xboxLiveToken);
-        var minecraftLoginInfo = GetMinecraftLoginInfo(HSTSToken, xboxLiveUserHash);
-        accessTokenExpiry = DateTime.Now + TimeSpan.FromSeconds(minecraftLoginInfo.RootElement.GetProperty("expires_in").GetInt32());
-        return minecraftLoginInfo.RootElement.GetProperty("access_token").GetString();
+        HttpClient client = new(new HttpClientHandler()
+        {
+            AllowAutoRedirect = true
+        });
+
+        (string sFTTag, string urlPost) = GetPPFTAndUrlPost(client);
+        string msAccessToken = GetMSLoginInfo(client, email, password, sFTTag, urlPost)["access_token"];
+        (string xboxLiveToken, ulong xboxLiveUserHash) = GetXboxLiveLogin(client, msAccessToken);
+        string HSTSToken = GetHSTSToken(client, xboxLiveToken);
+        var minecraftLoginInfo = GetMinecraftLoginInfo(client, HSTSToken, xboxLiveUserHash);
+        accessTokenExpiry = DateTime.Now + TimeSpan.FromSeconds((int)minecraftLoginInfo["expires_in"]);
+        return (string)minecraftLoginInfo["access_token"];
     }
-    private (string sFTTag, string urlPost) GetPPFTAndUrlPost()
+    private static (string sFTTag, string urlPost) GetPPFTAndUrlPost(HttpClient client)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "https://login.live.com/oauth20_authorize.srf?client_id=000000004C12AE6F&redirect_uri=https://login.live.com/oauth20_desktop.srf&scope=service::user.auth.xboxlive.com::MBI_SSL&display=touch&response_type=token&locale=en");
-        var response1 = _client.Send(request);
+        var response1 = client.Send(request);
         var response = response1.Content.ReadAsStringAsync().Result;
 
         string sFTTag = GetPPFTValueRegex().Match(response.Split("sFTTag:")[1]).Value.Replace("value=", "").Trim('"');
@@ -93,7 +93,7 @@ public partial class Login
     private static partial Regex GetPPFTValueRegex();
     [GeneratedRegex("urlPost:'(.+?)'")]
     private static partial Regex getUrlPostRegex();
-    private Dictionary<string, string> GetMSLoginInfo(string email, string password, string sFTTag, string urlPost)
+    private static Dictionary<string, string> GetMSLoginInfo(HttpClient client, string email, string password, string sFTTag, string urlPost)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, urlPost)
         {
@@ -105,7 +105,7 @@ public partial class Login
                 { "PPFT", sFTTag }
             })
         };
-        var response = _client.Send(request);
+        var response = client.Send(request);
 
         var msLoginInfo = new Dictionary<string, string>();
         foreach (var item in response.RequestMessage.RequestUri.OriginalString.Split('#')[1].Split('&'))
@@ -118,7 +118,7 @@ public partial class Login
 
         return msLoginInfo;
     }
-    private (string xboxLiveToken, ulong xboxLiveUserHash) GetXboxLiveLogin(string msAccessToken)
+    private static (string xboxLiveToken, ulong xboxLiveUserHash) GetXboxLiveLogin(HttpClient client, string msAccessToken)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "https://user.auth.xboxlive.com/user/authenticate");
         request.Headers.Add("Accept", "application/json");
@@ -133,16 +133,16 @@ public partial class Login
             "TokenType": "JWT"
         }
         """.Replace("ACCESS_TOKEN_HERE", msAccessToken), null, "application/json");
-        var response = _client.Send(request);
+        var response = client.Send(request);
 
         if (!response.IsSuccessStatusCode)
             throw new XboxLiveException(0, "Xbox live login failed");
-        var xboxLiveLoginJson = JsonDocument.Parse(response.Content.ReadAsStringAsync().Result);
-        string xboxLiveToken = xboxLiveLoginJson.RootElement.GetProperty("Token").GetString();
-        ulong xboxLiveUserHash = Convert.ToUInt64(xboxLiveLoginJson.RootElement.GetProperty("DisplayClaims").GetProperty("xui")[0].GetProperty("uhs").GetString());
+        var xboxLiveLoginJson = JsonNode.Parse(response.Content.ReadAsStringAsync().Result);
+        string xboxLiveToken = (string)xboxLiveLoginJson["Token"];
+        ulong xboxLiveUserHash = Convert.ToUInt64((string)xboxLiveLoginJson["DisplayClaims"]["xui"][0]["uhs"]);
         return (xboxLiveToken, xboxLiveUserHash);
     }
-    private string GetHSTSToken(string xboxLiveToken)
+    private static string GetHSTSToken(HttpClient client, string xboxLiveToken)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "https://xsts.auth.xboxlive.com/xsts/authorize");
         request.Headers.Add("Accept", "application/json");
@@ -158,12 +158,12 @@ public partial class Login
                 "TokenType": "JWT"
             }
             """.Replace("TOKEN_HERE_FROM_PREVIOUS_STEP", xboxLiveToken), null, "application/json");
-        var response = _client.Send(request);
+        var response = client.Send(request);
 
-        var xboxLiveHSTSJson = JsonDocument.Parse(response.Content.ReadAsStringAsync().Result);
-        return xboxLiveHSTSJson.RootElement.GetProperty("Token").GetString();
+        var xboxLiveHSTSJson = JsonNode.Parse(response.Content.ReadAsStringAsync().Result);
+        return (string)xboxLiveHSTSJson["Token"];
     }
-    private JsonDocument GetMinecraftLoginInfo(string HSTSToken, ulong xboxLiveUserHash)
+    private static JsonNode GetMinecraftLoginInfo(HttpClient client, string HSTSToken, ulong xboxLiveUserHash)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "https://api.minecraftservices.com/authentication/login_with_xbox")
         {
@@ -174,35 +174,33 @@ public partial class Login
             }
             """.Replace("USER_HASH_HERE", xboxLiveUserHash.ToString()).Replace("XSTS_TOKEN_HERE", HSTSToken), null, "application/json")
         };
-        var response = _client.Send(request);
+        var response = client.Send(request);
 
-        return JsonDocument.Parse(response.Content.ReadAsStringAsync().Result);
+        return JsonNode.Parse(response.Content.ReadAsStringAsync().Result);
     }
 
     /// <summary>
     /// returns the account's profile information
     /// </summary>
     /// <returns>the account's profile information</returns>
-    public ProfileInfo.ProfileInfoRoot GetProfileInfo()
+    public ProfileInfo.ProfileInfoRoot GetProfileInfo(HttpClient client)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "https://api.minecraftservices.com/minecraft/profile");
         request.Headers.Add("authorization", $"Bearer {AccessToken}");
-        var response = _client.Send(request);
-        return JsonSerializer.Deserialize<ProfileInfo.ProfileInfoRoot>(response.Content.ReadAsStream(), new JsonSerializerOptions { IncludeFields = true });
+        var response = client.Send(request);
+        return JsonSerializer.Deserialize<ProfileInfo.ProfileInfoRoot>(response.Content.ReadAsStream(), s_serializerOptionsIncludeFields);
     }
 
     /// <summary>
     /// returns a value whether the account has purchased Minecraft
     /// </summary>
     /// <returns>whether the account has purchased Minecraft</returns>
-    public bool IsOwnMinecraft()
+    public bool IsOwnMinecraft(HttpClient client)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "https://api.minecraftservices.com/entitlements/mcstore");
         request.Headers.Add("Authorization", $"Bearer {AccessToken}");
-        var response = _client.Send(request);
-        if (JsonDocument.Parse(response.Content.ReadAsStringAsync().Result).RootElement.GetProperty("items").GetArrayLength() == 0)
-            return false;
-        return true;
+        var response = client.Send(request);
+        return JsonNode.Parse(response.Content.ReadAsStringAsync().Result)["items"] is JsonArray { Count: > 0 };
     }
 
     /// <summary>
@@ -210,7 +208,7 @@ public partial class Login
     /// </summary>
     /// <param name="skinPath">path of the skin asset</param>
     /// <param name="type">the skin type</param>
-    public void SetSkin(string skinPath, SkinType type = SkinType.classic)
+    public void SetSkin(HttpClient client, string skinPath, SkinType type = SkinType.classic)
     {
         HttpRequestMessage request;
         if (skinPath == null)
@@ -228,14 +226,16 @@ public partial class Login
                 { new StreamContent(File.OpenRead(skinPath)), "file", skinPath }
             };
         }
-        _client.Send(request);
+        client.Send(request);
     }
 
+#pragma warning disable IDE0079 // Remove unnecessary suppression
 #pragma warning disable CA1822 // Mark members as static
 #pragma warning disable IDE0051 // Remove unused private members
     private void SetCape() { }//TODO: implement SetCape
 #pragma warning restore IDE0051 // Remove unused private members
 #pragma warning restore CA1822 // Mark members as static
+#pragma warning restore IDE0079 // Remove unnecessary suppression
 
     public class ProfileInfo
     {

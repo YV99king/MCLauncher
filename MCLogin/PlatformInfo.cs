@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 
 namespace MCLauncher;
@@ -6,7 +7,7 @@ namespace MCLauncher;
 /// <summary>
 /// Provides information about the current platform, including the operating system and Java platform name.
 /// </summary>
-public static class PlatformInfo
+internal static class PlatformInfo
 {
     static PlatformInfo()
     {
@@ -54,15 +55,21 @@ public static class PlatformInfo
     {
         int argsIndex = command.IndexOf(' ');
 
-        Process process = new()
+        Process process = new() { StartInfo = new(fileName: command[..argsIndex], arguments: command[(argsIndex + 1)..]) };
+
+        if (redirectStandardStream)
         {
-            StartInfo = new()
-            {
-                WindowStyle = ProcessWindowStyle.Hidden,
-                FileName = command[..argsIndex],
-                Arguments = command[(argsIndex + 1)..]
-            }
-        };
+            process.StartInfo.RedirectStandardInput = true;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
+            process.StartInfo.UseShellExecute = false;
+        }
+
+        return process.Start() ? process : null;
+    }
+    public static Process StartProcess(string exec, bool redirectStandardStream = true, params IEnumerable<string> args)
+    {
+        Process process = new() { StartInfo = new(exec, args) };
 
         if (redirectStandardStream)
         {

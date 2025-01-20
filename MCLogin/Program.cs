@@ -82,6 +82,6 @@ public static class Program
         else if (clean == false)
             Console.WriteLine("Cleanup aborted.");
         else
-            Console.WriteLine("invalid input: " + clean);
+            Console.WriteLine("invalid input.");
     }
 }

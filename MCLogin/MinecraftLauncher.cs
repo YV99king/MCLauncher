@@ -41,7 +41,7 @@ public partial class MinecraftLauncher
 
         if (Loader == MinecraftLoader.Vanila)
         {
-            const string versionManifestUrl = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
+            const string versionManifestUrl = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 
             await Utils.DownloadFileAsync(client, versionManifestUrl, Path.Combine(MinecraftPath.FullName, "versions", "version_manifest_v2.json"), overwrite: true);
             JsonNode versionManifestJson;
@@ -52,9 +52,9 @@ public partial class MinecraftLauncher
 
             JsonNode versionInfo;
             if (Version == "release" || Version == "snapshot")
-                versionInfo = versionManifestJson["versions"].AsArray().SingleOrDefault(node => (string)node["id"] == (string)versionManifestJson["latest"][Version]);
+                versionInfo = versionManifestJson["versions"].AsArray().FirstOrDefault(node => (string)node["id"] == (string)versionManifestJson["latest"][Version]);
             else
-                versionInfo = versionManifestJson["versions"].AsArray().SingleOrDefault(node => (string)node["id"] == Version);
+                versionInfo = versionManifestJson["versions"].AsArray().FirstOrDefault(node => (string)node["id"] == Version);
 
             if (versionInfo is null)
                 throw new InvalidOperationException($"Version '{Version}' is not a valid vanila version.");
@@ -63,19 +63,13 @@ public partial class MinecraftLauncher
             await Utils.DownloadFileAsync(client,
                                           url: (string)versionInfo["url"],
                                           path: Path.Combine(MinecraftPath.FullName, "versions", versionId, versionId + ".json"),
-                                          sha1: (string)versionInfo["sha1"],
-                                          log: Console.WriteLine);
+                                          sha1: (string)versionInfo["sha1"]);
         }
         else if (Loader != MinecraftLoader.custom)
             throw new NotImplementedException();
 
         VersionJsonRoot versionJson;
-        using (var versionJsonStream = new FileStream(Path.Combine(MinecraftPath.FullName,
-                                                                   "versions",
-                                                                   versionId,
-                                                                   versionId + ".json"),
-                                                      FileMode.Open,
-                                                      FileAccess.Read))
+        using (var versionJsonStream = new FileStream(Path.Combine(MinecraftPath.FullName, "versions", versionId, versionId + ".json"), FileMode.Open, FileAccess.Read))
         {
             var versionJsonNode = JsonNode.Parse(versionJsonStream);
             if (versionJsonNode["inheritsFrom"] is { } inheritsFrom)
@@ -95,15 +89,13 @@ public partial class MinecraftLauncher
             tasks.Add(Utils.DownloadFileAsync(client,
                                               url: versionJson.logging.client.file.url,
                                               path: Path.Combine(MinecraftPath.FullName, "assets", "log_configs", versionJson.logging.client.file.id),
-                                              sha1: versionJson.logging.client.file.sha1,
-                                              log: Console.WriteLine));
+                                              sha1: versionJson.logging.client.file.sha1));
 
         if (versionJson.downloads.client != null)
             tasks.Add(Utils.DownloadFileAsync(client,
                                               url: versionJson.downloads.client.url,
                                               path: Path.Combine(MinecraftPath.FullName, "versions", versionJson.id, versionJson.id + ".jar"),
-                                              sha1: versionJson.downloads.client.sha1,
-                                              log: Console.WriteLine));
+                                              sha1: versionJson.downloads.client.sha1));
 
         await Task.WhenAll(tasks);
     }
@@ -127,7 +119,7 @@ public partial class MinecraftLauncher
 
                 List<Task> tasks = [];
 
-                tasks.Add(Utils.DownloadFileAsync(client, libUrl, libPath, log: Console.WriteLine));
+                tasks.Add(Utils.DownloadFileAsync(client, libUrl, libPath));
 
                 if (library.downloads == null)
                 {
@@ -139,11 +131,11 @@ public partial class MinecraftLauncher
                 }
 
                 if (library.downloads.artifact is { } artifact && !string.IsNullOrWhiteSpace(artifact.url) && artifact.path != null)
-                    tasks.Add(Utils.DownloadFileAsync(client, artifact.url, Path.Combine(MinecraftPath.FullName, "libraries", artifact.path), libSha1, overwrite: true, log: Console.WriteLine));
+                    tasks.Add(Utils.DownloadFileAsync(client, artifact.url, Path.Combine(MinecraftPath.FullName, "libraries", artifact.path), libSha1, overwrite: true));
 
                 if (libUrlNative != null)
                 {
-                    tasks.Add(Utils.DownloadFileAsync(client, libUrlNative, libPathNative, libSha1Native, overwrite: true, log: Console.WriteLine).ContinueWith(task =>
+                    tasks.Add(Utils.DownloadFileAsync(client, libUrlNative, libPathNative, libSha1Native, overwrite: true).ContinueWith(task =>
                         ExtractNativesFile(libPathNative, Path.Combine(MinecraftPath.FullName, "versions", versionId, "natives"), library.extract)));
                 }
 
@@ -176,7 +168,7 @@ public partial class MinecraftLauncher
     {
         HttpClient client = new();
 
-        await Utils.DownloadFileAsync(client, versionJson.assetIndex.url, Path.Combine(MinecraftPath.FullName, "assets", "indexes", versionJson.assets + ".json"), log: Console.WriteLine);
+        await Utils.DownloadFileAsync(client, versionJson.assetIndex.url, Path.Combine(MinecraftPath.FullName, "assets", "indexes", versionJson.assets + ".json"));
         KeyValuePair<string, JsonNode>[] assets;
         using (var assetIndexStream = new FileStream(Path.Combine(MinecraftPath.FullName, "assets", "indexes", versionJson.assets + ".json"), FileMode.Open))
         {
@@ -198,8 +190,7 @@ public partial class MinecraftLauncher
                                                                       "objects",
                                                                       ((string)asset.Value["hash"])[..2],
                                                                       (string)asset.Value["hash"]),
-                                                   sha1: (string)asset.Value["hash"],
-                                                   log: Console.WriteLine);
+                                                   sha1: (string)asset.Value["hash"]);
 
                 }
                 catch (Exception)
@@ -275,7 +266,7 @@ public partial class MinecraftLauncher
 
     public Process LaunchMinecraft(Options options)
     {
-        var loginInfo = Login.GetProfileInfo();
+        var loginInfo = Login.GetProfileInfo(new()); // TODO: cache client?
         options.token ??= Login.AccessToken;
         options.uuid ??= loginInfo.id;
         options.username ??= loginInfo.name;
@@ -283,12 +274,7 @@ public partial class MinecraftLauncher
         options.nativesDirectory ??= Path.Combine(MinecraftPath.FullName, "versions", Version, "natives");
 
         VersionJsonRoot versionJson;
-        using (Stream versionJsonStream = new FileStream(Path.Combine(MinecraftPath.FullName,
-                                                                      "versions",
-                                                                      Version,
-                                                                      Version + ".json"),
-                                                         FileMode.Open,
-                                                         FileAccess.Read))
+        using (Stream versionJsonStream = new FileStream(Path.Combine(MinecraftPath.FullName, "versions", Version, Version + ".json"), FileMode.Open, FileAccess.Read))
         {
             versionJson = DeserializeJson(versionJsonStream, MinecraftPath); 
         }
@@ -312,10 +298,7 @@ public partial class MinecraftLauncher
 
         if (options.enableLoggingConfig && versionJson.logging.client != null)
             minecraftCommandBuilder.Append(versionJson.logging.client.argument.Replace("${path}",
-                                                                                       Path.Combine(MinecraftPath.FullName,
-                                                                                                    "assets",
-                                                                                                    "log_configs",
-                                                                                                    versionJson.logging.client.file.id)));
+                                                                                       Path.Combine(MinecraftPath.FullName, "assets", "log_configs", versionJson.logging.client.file.id)));
 
         minecraftCommandBuilder.Append(versionJson.mainClass + ' ');
 
