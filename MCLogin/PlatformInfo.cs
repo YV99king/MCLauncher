@@ -67,7 +67,7 @@ internal static class PlatformInfo
 
         return process.Start() ? process : null;
     }
-    public static Process StartProcess(string exec, bool redirectStandardStream = true, params IEnumerable<string> args)
+    public static Process StartProcess(bool redirectStandardStream, string exec, params IEnumerable<string> args)
     {
         Process process = new() { StartInfo = new(exec, args) };
 

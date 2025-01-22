@@ -20,7 +20,7 @@ public static class Program
         var loginInfo = new Login(username, password);
 
         Console.Write("version: "); var version = Console.ReadLine();
-        var minecraftV1_21 = new MinecraftLauncher(version, loginInfo, new(@"..\..\..\..\.minecraft"), MinecraftLoader.Vanila);
+        var minecraftV1_21 = new MinecraftLauncher(version, new(@"..\..\..\..\.minecraft"), loginInfo, MinecraftLoader.Vanila);
         minecraftV1_21.InstallMinecraft().Wait();
         var mcProc = minecraftV1_21.LaunchMinecraft(new());
 

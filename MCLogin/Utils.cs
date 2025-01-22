@@ -11,6 +11,13 @@ internal class Utils
 {
     public static string LauncherName => "MCLauncher";
     public static string LauncherVersion => "alpha";
+    public static string DefaultMinecraftDirectory { get; } = PlatformInfo.OperatingSystem switch
+    {
+        PlatformInfo.OS.Windows => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\.minecraft",
+        PlatformInfo.OS.Linux => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + @"/.minecraft",
+        PlatformInfo.OS.MacOS => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"/Library/Application Support/minecraft",
+        _ => null,
+    };
 
     public static async Task<bool> DownloadFileAsync(HttpClient client, string url, string path, string sha1 = "", int retries = 5, bool overwrite = false, Action<string> log = null)
     {
@@ -87,4 +94,26 @@ internal class Utils
             return true;
         }
     }
+
+    public static string NormalizePath(string path, string fallback = null)
+    {
+        if (!string.IsNullOrWhiteSpace(path)
+            && !path.Any(c => Path.GetInvalidPathChars().Contains(c)))
+            try
+            {
+                return Path.GetFullPath(path);
+            }
+            catch { }
+
+        if (!string.IsNullOrWhiteSpace(fallback)
+            && !fallback.Any(c => Path.GetInvalidPathChars().Contains(c)))
+            try
+            {
+                return Path.GetFullPath(fallback);
+            }
+            catch { }
+
+        return null;
+    }
+
 }

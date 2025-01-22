@@ -11,14 +11,16 @@ namespace MCLauncher;
 /// <summary>
 /// Provides access to Mojang's authentication services
 /// </summary>
-public partial class Login
+public partial class Login : ILoginProvider
 {
     private static readonly JsonSerializerOptions s_serializerOptionsIncludeFields = new() { IncludeFields = true };
 
-    private DateTime accessTokenExpiry;
-    private readonly string email;
-    private readonly string password;
-    private string token;
+    private DateTime _accessTokenExpiry;
+    private readonly string _email;
+    private readonly string _password;
+    private ProfileInfo _profileInfo;
+    private DateTime _lastProfileInfoUpdate;
+    private string _token;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Login"/> class
@@ -27,57 +29,78 @@ public partial class Login
     /// <param name="password">the password of the account</param>
     public Login(string email, string password)
     {
-        this.email = email;
-        this.password = password;
-        token = GenerateAccessToken(email, password, out accessTokenExpiry);
+        _email = email;
+        _password = password;
+        _token = GenerateAccessToken(new(), email, password, out _accessTokenExpiry);
     }
 
     /// <summary>
-    /// Minecraft bearer token
+    /// Minecraft's bearer token.
     /// </summary>
     public string AccessToken
     {
         get
         {
-            if (accessTokenExpiry < DateTime.Now)
-                token = GenerateAccessToken(email, password, out accessTokenExpiry);
-            return token;
+            if (_accessTokenExpiry < DateTime.Now)
+                _token = GenerateAccessToken(new(), _email, _password, out _accessTokenExpiry);
+            return _token;
         }
     }
     /// <summary>
-    /// the account's email
+    /// when the bearer token will expire.
     /// </summary>
-    public string Email => email;
+    public DateTime AccessTokenExpiry => _accessTokenExpiry;
     /// <summary>
-    /// the account's password
+    /// the account's email.
     /// </summary>
-    public string Password => password;
+    public string Email => _email;
     /// <summary>
-    /// when the bearer token will expire
+    /// the account's password.
     /// </summary>
-    public DateTime AccessTokenExpiry => accessTokenExpiry;
-
+    public string Password => _password;
     /// <summary>
-    /// generates Minecraft bearer token
+    /// the account's profile information.
     /// </summary>
-    /// <param name="email">the account's email</param>
-    /// <param name="password">the account's password</param>
-    /// <param name="accessTokenExpiry">where to save the bearer token's expiry date</param>
-    /// <returns>Minecraft bearer token</returns>
-    public static string GenerateAccessToken(string email, string password, out DateTime accessTokenExpiry)
+    public ProfileInfo Profile
     {
-        HttpClient client = new(new HttpClientHandler()
+        get
         {
-            AllowAutoRedirect = true
-        });
+            if (_lastProfileInfoUpdate.AddMinutes(5) < DateTime.Now)
+                UpdateProfileInfo(new());
+            return _profileInfo;
+        }
+    }
 
-        (string sFTTag, string urlPost) = GetPPFTAndUrlPost(client);
-        string msAccessToken = GetMSLoginInfo(client, email, password, sFTTag, urlPost)["access_token"];
-        (string xboxLiveToken, ulong xboxLiveUserHash) = GetXboxLiveLogin(client, msAccessToken);
-        string HSTSToken = GetHSTSToken(client, xboxLiveToken);
-        var minecraftLoginInfo = GetMinecraftLoginInfo(client, HSTSToken, xboxLiveUserHash);
-        accessTokenExpiry = DateTime.Now + TimeSpan.FromSeconds((int)minecraftLoginInfo["expires_in"]);
-        return (string)minecraftLoginInfo["access_token"];
+    /// <summary>
+    /// Generates Minecraft's bearer token.
+    /// </summary>
+    /// <param name="client">A <see cref="HttpClient"/> to access the internet.</param>
+    /// <param name="email">The account's email.</param>
+    /// <param name="password">The account's password.</param>
+    /// <param name="accessTokenExpiry">Where to save the bearer token's expiry date.</param>
+    /// <returns>Minecraft's bearer token.</returns>
+    public static string GenerateAccessToken(HttpClient client, string email, string password, out DateTime accessTokenExpiry)
+    {
+        client ??= new();
+
+        try
+        {
+            (string sFTTag, string urlPost) = GetPPFTAndUrlPost(client);
+            string msAccessToken = GetMSLoginInfo(client, email, password, sFTTag, urlPost)["access_token"];
+            (string xboxLiveToken, ulong xboxLiveUserHash) = GetXboxLiveLogin(client, msAccessToken);
+            string HSTSToken = GetHSTSToken(client, xboxLiveToken);
+            var minecraftLoginInfo = GetMinecraftLoginInfo(client, HSTSToken, xboxLiveUserHash);
+            accessTokenExpiry = DateTime.Now + TimeSpan.FromSeconds((int)minecraftLoginInfo["expires_in"]);
+            return (string)minecraftLoginInfo["access_token"];
+        }
+        catch (HttpRequestException e)
+        {
+            throw new HttpRequestException("Failed to access the internet.", e);
+        }
+        catch (Exception e)
+        {
+            throw new ArgumentException($"Argument \"{nameof(email)}\" or \" {nameof(password)}\" is incorrect.", e);
+        }
     }
     private static (string sFTTag, string urlPost) GetPPFTAndUrlPost(HttpClient client)
     {
@@ -168,7 +191,7 @@ public partial class Login
         var request = new HttpRequestMessage(HttpMethod.Post, "https://api.minecraftservices.com/authentication/login_with_xbox")
         {
             Content = new StringContent("""
-                        {
+            {
                "identityToken" : "XBL3.0 x=USER_HASH_HERE;XSTS_TOKEN_HERE",
                "ensureLegacyEnabled" : true
             }
@@ -180,21 +203,25 @@ public partial class Login
     }
 
     /// <summary>
-    /// returns the account's profile information
+    /// Updates the account's profile information.
     /// </summary>
-    /// <returns>the account's profile information</returns>
-    public ProfileInfo.ProfileInfoRoot GetProfileInfo(HttpClient client)
+    /// <param name="client">A <see cref="HttpClient"/> to access the internet.</param>
+    /// <returns>the account's profile information.</returns>
+    public ProfileInfo UpdateProfileInfo(HttpClient client)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "https://api.minecraftservices.com/minecraft/profile");
         request.Headers.Add("authorization", $"Bearer {AccessToken}");
         var response = client.Send(request);
-        return JsonSerializer.Deserialize<ProfileInfo.ProfileInfoRoot>(response.Content.ReadAsStream(), s_serializerOptionsIncludeFields);
+        _profileInfo = JsonSerializer.Deserialize<ProfileInfo>(response.Content.ReadAsStream(), s_serializerOptionsIncludeFields);
+        _lastProfileInfoUpdate = DateTime.Now;
+        return _profileInfo;
     }
 
     /// <summary>
-    /// returns a value whether the account has purchased Minecraft
+    /// Returns a value indicating whether the account has purchased Minecraft.
     /// </summary>
-    /// <returns>whether the account has purchased Minecraft</returns>
+    /// <param name="client">A <see cref="HttpClient"/> to access the internet.</param>
+    /// <returns>A value indicating whether the account has purchased Minecraft.</returns>
     public bool IsOwnMinecraft(HttpClient client)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "https://api.minecraftservices.com/entitlements/mcstore");
@@ -204,10 +231,11 @@ public partial class Login
     }
 
     /// <summary>
-    /// sets the account's skin to the specified skin
+    /// Sets the account's skin to the specified skin.
     /// </summary>
-    /// <param name="skinPath">path of the skin asset</param>
-    /// <param name="type">the skin type</param>
+    /// <param name="client">A <see cref="HttpClient"/> to access the internet.</param>
+    /// <param name="skinPath">Path of the skin asset.</param>
+    /// <param name="type">The skin type.</param>
     public void SetSkin(HttpClient client, string skinPath, SkinType type = SkinType.classic)
     {
         HttpRequestMessage request;
@@ -229,37 +257,5 @@ public partial class Login
         client.Send(request);
     }
 
-#pragma warning disable IDE0079 // Remove unnecessary suppression
-#pragma warning disable CA1822 // Mark members as static
-#pragma warning disable IDE0051 // Remove unused private members
-    private void SetCape() { }//TODO: implement SetCape
-#pragma warning restore IDE0051 // Remove unused private members
-#pragma warning restore CA1822 // Mark members as static
-#pragma warning restore IDE0079 // Remove unnecessary suppression
-
-    public class ProfileInfo
-    {
-        public record Cape
-        {
-            public string id;
-            public string state;
-            public string url;
-            public string alias;
-        }
-        public record ProfileInfoRoot
-        {
-            public string id;
-            public string name;
-            public List<Skin> skins;
-            public List<Cape> capes;
-        }
-        public record Skin
-        {
-            public string id;
-            public string state;
-            public string url;
-            public string variant;
-            public string alias;
-        }
-    }
+    void ILoginProvider.SetCape(HttpClient client) { throw new NotImplementedException(); } //TODO: implement SetCape
 }
