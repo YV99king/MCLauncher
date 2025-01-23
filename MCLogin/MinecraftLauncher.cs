@@ -266,9 +266,19 @@ public partial class MinecraftLauncher
         tasks.Add(File.WriteAllTextAsync(Path.Combine(MinecraftDirectory, "runtime", javaVersion.component, PlatformInfo.JavaPlatformName, ".version"),
                                          (string)runtimesManifestJson[PlatformInfo.JavaPlatformName][javaVersion.component][0]["version"]["name"]));
 
-        tasks.Add(File.WriteAllLinesAsync(Path.Combine(MinecraftDirectory, "runtime", javaVersion.component, PlatformInfo.JavaPlatformName, $"{javaVersion.component}.sha1"),
-                                          from file in jvmFiles
-                                          select $"{file.path} /#// {file.sha1} {File.GetCreationTimeUtc(file.path).Ticks * 100 /* a tick is 100 nanoseconds */ }"));
+        tasks.Add(Task.Run(async () =>
+        {
+            try
+            {
+                await File.WriteAllLinesAsync(Path.Combine(MinecraftDirectory, "runtime", javaVersion.component, PlatformInfo.JavaPlatformName, $"{javaVersion.component}.sha1"),
+                                                  from file in jvmFiles
+                                                  select $"{file.path} /#// {file.sha1} {File.GetCreationTimeUtc(file.path).Ticks * 100 /* a tick is 100 nanoseconds */ }");
+            }
+            catch (Exception)
+            {
+                return;
+            }
+        }));
 
         await Task.WhenAll(tasks);
     }
@@ -297,25 +307,25 @@ public partial class MinecraftLauncher
             javaExecutable = Path.Combine(MinecraftDirectory, "runtime", versionJson.javaVersion.component, PlatformInfo.JavaPlatformName, versionJson.javaVersion.component, "bin", "java");
 
         if (options.JvmArguments != null && options.JvmArguments.Count > 0)
-            minecraftArgs.Add(string.Join(' ', options.JvmArguments) + ' ');
+            minecraftArgs.AddRange(options.JvmArguments);
         if (versionJson.arguments.jvm != null)
-            minecraftArgs.Add(ParseArgumentsList(versionJson.arguments.jvm, options, versionJson, MinecraftDirectory));
+            minecraftArgs.AddRange(ParseArgumentsList(versionJson.arguments.jvm, options, versionJson, MinecraftDirectory));
         else
         {
             minecraftArgs.Add("-Djava.library.path=" + Path.Combine(MinecraftDirectory, "versions", versionJson.id, "natives"));
-            minecraftArgs.Add("-cp ");
+            minecraftArgs.Add("-cp");
             minecraftArgs.Add(GetLibrariesString(versionJson, MinecraftDirectory));
         }
 
         if (options.EnableLoggingConfig && versionJson.logging.client != null)
-            minecraftArgs.Add(versionJson.logging.client.argument.Replace("${path}", Path.Combine(MinecraftDirectory, "assets", "log_configs", versionJson.logging.client.file.id)));
+            minecraftArgs.AddRange(versionJson.logging.client.argument.Replace("${path}", Path.Combine(MinecraftDirectory, "assets", "log_configs", versionJson.logging.client.file.id)).Split(' '));
 
-        minecraftArgs.Add(versionJson.mainClass + ' ');
+        minecraftArgs.Add(versionJson.mainClass);
 
         if (versionJson.minecraftArguments != null)
-            minecraftArgs.Add(ParseArgumentsString(versionJson.minecraftArguments, options, versionJson, MinecraftDirectory));
+            minecraftArgs.AddRange(ParseArgumentsString(versionJson.minecraftArguments, options, versionJson, MinecraftDirectory));
         else
-            minecraftArgs.Add(ParseArgumentsList(versionJson.arguments.game, options, versionJson, MinecraftDirectory));
+            minecraftArgs.AddRange(ParseArgumentsList(versionJson.arguments.game, options, versionJson, MinecraftDirectory));
 
         if (options.QuickPlay?.Values[0] != null)
         {
@@ -329,43 +339,47 @@ public partial class MinecraftLauncher
         if (options.DisableChat)
             minecraftArgs.Add("--disableChat");
 
-        return PlatformInfo.StartProcess(true, javaExecutable, minecraftArgs);
+        return PlatformInfo.StartProcess(false, javaExecutable, minecraftArgs);
     }
-    private static string ParseArgumentsList(List<Arguments.ArgumentInfo> args, Options options, VersionJsonRoot versionJson, string minecraftPath)
+    private static IEnumerable<string> ParseArgumentsList(List<Arguments.ArgumentInfo> args, Options options, VersionJsonRoot versionJson, string minecraftPath)
     {
-        var builder = new StringBuilder();
+        var builder = new List<string>();
         foreach (var arg in args)
             if (Rule.IsRuleListMatching(arg.rules, options))
-                builder.Append(string.Join(' ', arg.value) + ' ');
-        return ReplaceArguments(builder.ToString(), versionJson, minecraftPath, options);
+                builder.AddRange(arg.value);
+        return ReplaceArguments(builder, versionJson, minecraftPath, options);
     }
-    private static string ReplaceArguments(string argstr, VersionJsonRoot versionJson, string minecraftPath, Options options)
+    private static IEnumerable<string> ReplaceArguments(List<string> argCollection, VersionJsonRoot versionJson, string minecraftPath, Options options)
     {
-        ReplaceArgWithLazyEvaluation(ref argstr, "${natives_directory}", () => options.NativesDirectory);
-        ReplaceArgWithLazyEvaluation(ref argstr, "${launcher_name}", () => options.LauncherName);
-        ReplaceArgWithLazyEvaluation(ref argstr, "${launcher_version}", () => options.LauncherVersion);
-        ReplaceArgWithLazyEvaluation(ref argstr, "${classpath}", () => GetLibrariesString(versionJson, minecraftPath));
-        ReplaceArgWithLazyEvaluation(ref argstr, "${auth_player_name}", () => options.Username);
-        ReplaceArgWithLazyEvaluation(ref argstr, "${version_name}", () => versionJson.id);
-        ReplaceArgWithLazyEvaluation(ref argstr, "${game_directory}", () => Utils.NormalizePath(options.GameDirectory, minecraftPath));
-        ReplaceArgWithLazyEvaluation(ref argstr, "${assets_root}", () => Path.Combine(minecraftPath, "assets"));
-        ReplaceArgWithLazyEvaluation(ref argstr, "${assets_index_name}", () => !string.IsNullOrEmpty(versionJson.assets) ? versionJson.assets : versionJson.id);
-        ReplaceArgWithLazyEvaluation(ref argstr, "${auth_uuid}", () => options.Uuid);
-        ReplaceArgWithLazyEvaluation(ref argstr, "${auth_access_token}", () => options.Token);
-        ReplaceArgWithLazyEvaluation(ref argstr, "${user_type}", () => "msa");
-        ReplaceArgWithLazyEvaluation(ref argstr, "${version_type}", () => versionJson.type);
-        ReplaceArgWithLazyEvaluation(ref argstr, "${user_properties}", () => "{}");
-        ReplaceArgWithLazyEvaluation(ref argstr, "${resolution_width}", () => options.CustomResolution?.width.ToString());
-        ReplaceArgWithLazyEvaluation(ref argstr, "${resolution_height}", () => options.CustomResolution?.height.ToString());
-        ReplaceArgWithLazyEvaluation(ref argstr, "${game_assets}", () => Path.Combine(minecraftPath, "assets", "virtual", "legacy"));
-        ReplaceArgWithLazyEvaluation(ref argstr, "${auth_session}", () => options.Token);
-        ReplaceArgWithLazyEvaluation(ref argstr, "${library_directory}", () => Path.Combine(minecraftPath, "libraries"));
-        ReplaceArgWithLazyEvaluation(ref argstr, "${classpath_separator}", PlatformInfo.ClasspathSeparator.ToString);
-        ReplaceArgWithLazyEvaluation(ref argstr, "${quickPlayPath}", () => options.QuickPlayPath);
-        ReplaceArgWithLazyEvaluation(ref argstr, "${quickPlaySingleplayer}", () => options.QuickPlay?.Values[0]);
-        ReplaceArgWithLazyEvaluation(ref argstr, "${quickPlayMultiplayer}", () => $"{options.QuickPlay?.Values[0]}:{options.QuickPlay?.Values[1]}");
-        ReplaceArgWithLazyEvaluation(ref argstr, "${quickPlayRealms}", () => options.QuickPlay?.Values[0]);
-        return argstr;
+        foreach (var arg in argCollection)
+        {
+            string argstr = arg;
+            ReplaceArgWithLazyEvaluation(ref argstr, "${natives_directory}", () => options.NativesDirectory);
+            ReplaceArgWithLazyEvaluation(ref argstr, "${launcher_name}", () => options.LauncherName);
+            ReplaceArgWithLazyEvaluation(ref argstr, "${launcher_version}", () => options.LauncherVersion);
+            ReplaceArgWithLazyEvaluation(ref argstr, "${classpath}", () => GetLibrariesString(versionJson, minecraftPath));
+            ReplaceArgWithLazyEvaluation(ref argstr, "${auth_player_name}", () => options.Username);
+            ReplaceArgWithLazyEvaluation(ref argstr, "${version_name}", () => versionJson.id);
+            ReplaceArgWithLazyEvaluation(ref argstr, "${game_directory}", () => Utils.NormalizePath(options.GameDirectory, minecraftPath));
+            ReplaceArgWithLazyEvaluation(ref argstr, "${assets_root}", () => Path.Combine(minecraftPath, "assets"));
+            ReplaceArgWithLazyEvaluation(ref argstr, "${assets_index_name}", () => !string.IsNullOrEmpty(versionJson.assets) ? versionJson.assets : versionJson.id);
+            ReplaceArgWithLazyEvaluation(ref argstr, "${auth_uuid}", () => options.Uuid);
+            ReplaceArgWithLazyEvaluation(ref argstr, "${auth_access_token}", () => options.Token);
+            ReplaceArgWithLazyEvaluation(ref argstr, "${user_type}", () => "msa");
+            ReplaceArgWithLazyEvaluation(ref argstr, "${version_type}", () => versionJson.type);
+            ReplaceArgWithLazyEvaluation(ref argstr, "${user_properties}", () => "{}");
+            ReplaceArgWithLazyEvaluation(ref argstr, "${resolution_width}", () => options.CustomResolution?.width.ToString());
+            ReplaceArgWithLazyEvaluation(ref argstr, "${resolution_height}", () => options.CustomResolution?.height.ToString());
+            ReplaceArgWithLazyEvaluation(ref argstr, "${game_assets}", () => Path.Combine(minecraftPath, "assets", "virtual", "legacy"));
+            ReplaceArgWithLazyEvaluation(ref argstr, "${auth_session}", () => options.Token);
+            ReplaceArgWithLazyEvaluation(ref argstr, "${library_directory}", () => Path.Combine(minecraftPath, "libraries"));
+            ReplaceArgWithLazyEvaluation(ref argstr, "${classpath_separator}", PlatformInfo.ClasspathSeparator.ToString);
+            ReplaceArgWithLazyEvaluation(ref argstr, "${quickPlayPath}", () => options.QuickPlayPath);
+            ReplaceArgWithLazyEvaluation(ref argstr, "${quickPlaySingleplayer}", () => options.QuickPlay?.Values[0]);
+            ReplaceArgWithLazyEvaluation(ref argstr, "${quickPlayMultiplayer}", () => $"{options.QuickPlay?.Values[0]}:{options.QuickPlay?.Values[1]}");
+            ReplaceArgWithLazyEvaluation(ref argstr, "${quickPlayRealms}", () => options.QuickPlay?.Values[0]);
+            yield return argstr; 
+        }
 
         static void ReplaceArgWithLazyEvaluation(ref string argstr, string oldValue, Func<string> newValueFactory)
         {
@@ -399,14 +413,13 @@ public partial class MinecraftLauncher
             libString.Append(Path.Combine(minecraftPath, "versions", versionJson.id, $"{versionJson.id}.jar"));
         return libString.ToString();
     }
-    private static string ParseArgumentsString(string arguments, Options options, VersionJsonRoot versionJson, string minecraftPath)
+    private static IEnumerable<string> ParseArgumentsString(string arguments, Options options, VersionJsonRoot versionJson, string minecraftPath)
     {
-        arguments = ReplaceArguments(arguments.Trim(), versionJson, minecraftPath, options);
         if (options.CustomResolution != null)
-            arguments += "--width" + options.CustomResolution?.width + "--height" + options.CustomResolution?.height;
+            arguments += $" --width {options.CustomResolution?.width} --height {options.CustomResolution?.height}";
         if (options.Demo)
-            arguments += "--demo";
-        return arguments;
+            arguments += " --demo";
+        return ReplaceArguments(arguments.Trim().Split(' ').ToList(), versionJson, minecraftPath, options);
     }
 
     public record struct Options
@@ -458,7 +471,7 @@ public partial class MinecraftLauncher
         }
     }
 
-    public class VersionJson
+    internal class VersionJson
     {
         private static readonly JsonSerializerOptions options = new()
         {
