@@ -16,13 +16,13 @@ namespace MCLauncher;
 
 public partial class MinecraftLauncher
 {
-    public ILoginProvider Login { get; }
-    public string MinecraftDirectory { get; }
     public string Version { get; }
+    public string MinecraftDirectory { get; }
+    public ILoginProvider Login { get; }
     public MinecraftLoader Loader { get; }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="MinecraftLauncher">.</see>
+    /// Initializes a new instance of the <see cref="MinecraftLauncher"/>.
     /// </summary>
     /// <param name="version">The minecraft version to use.</param>
     /// <param name="minecraftDirectory">The path to the Minecraft directory. Fallbacks to <see cref="Utils.DefaultMinecraftDirectory"/> if the provided value is empty or invalid.</param>
@@ -48,34 +48,60 @@ public partial class MinecraftLauncher
         HttpClient client = new();
         var versionId = Version;
 
-        if (Loader == MinecraftLoader.Vanila)
+        switch (Loader)
         {
-            const string versionManifestUrl = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+            case MinecraftLoader.Vanila:
+                {
+                    const string versionManifestUrl = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 
-            await Utils.DownloadFileAsync(client, versionManifestUrl, Path.Combine(MinecraftDirectory, "versions", "version_manifest_v2.json"), overwrite: true);
-            JsonNode versionManifestJson;
-            using (var manifestStream = new FileStream(Path.Combine(MinecraftDirectory, "versions", "version_manifest_v2.json"), FileMode.Open, FileAccess.Read))
-            {
-                versionManifestJson = JsonNode.Parse(manifestStream);
-            }
+                    await Utils.DownloadFileAsync(client, versionManifestUrl, Path.Combine(MinecraftDirectory, "versions", "version_manifest_v2.json"), overwrite: true);
+                    JsonNode versionManifestJson;
+                    using (var manifestStream = new FileStream(Path.Combine(MinecraftDirectory, "versions", "version_manifest_v2.json"), FileMode.Open, FileAccess.Read))
+                    {
+                        versionManifestJson = JsonNode.Parse(manifestStream);
+                    }
 
-            JsonNode versionInfo;
-            if (Version == "release" || Version == "snapshot")
-                versionInfo = versionManifestJson["versions"].AsArray().FirstOrDefault(node => (string)node["id"] == (string)versionManifestJson["latest"][Version]);
-            else
-                versionInfo = versionManifestJson["versions"].AsArray().FirstOrDefault(node => (string)node["id"] == Version);
+                    JsonNode versionInfo;
+                    if (Version == "release" || Version == "snapshot")
+                        versionInfo = versionManifestJson["versions"].AsArray().FirstOrDefault(node => (string)node["id"] == (string)versionManifestJson["latest"][Version]);
+                    else
+                        versionInfo = versionManifestJson["versions"].AsArray().FirstOrDefault(node => (string)node["id"] == Version);
 
-            if (versionInfo is null)
-                throw new InvalidOperationException($"Version '{Version}' is not a valid vanila version.");
-            versionId = (string)versionInfo["id"];
+                    if (versionInfo is null)
+                        throw new InvalidOperationException($"Version '{Version}' is not a valid vanila version.");
+                    versionId = (string)versionInfo["id"];
 
-            await Utils.DownloadFileAsync(client,
-                                          url: (string)versionInfo["url"],
-                                          path: Path.Combine(MinecraftDirectory, "versions", versionId, versionId + ".json"),
-                                          sha1: (string)versionInfo["sha1"]);
+                    await Utils.DownloadFileAsync(client,
+                                                  url: (string)versionInfo["url"],
+                                                  path: Path.Combine(MinecraftDirectory, "versions", versionId, versionId + ".json"),
+                                                  sha1: (string)versionInfo["sha1"]);
+                    break;
+                }
+
+            case MinecraftLoader.Fabric:
+                {
+                    const string fabricV2BaseUrl = "https://meta.fabricmc.net/v2/";
+
+                    break; 
+                }
+            case MinecraftLoader.Forge:
+                {
+
+                    break;
+                }
+            case MinecraftLoader.Quilt:
+                {
+
+                    break;
+                }
+            case MinecraftLoader.NeoForge:
+                {
+
+                    break;
+                }
+            case MinecraftLoader.LiteLoader:
+                throw new NotImplementedException();
         }
-        else if (Loader != MinecraftLoader.custom)
-            throw new NotImplementedException();
 
         VersionJsonRoot versionJson;
         using (var versionJsonStream = new FileStream(Path.Combine(MinecraftDirectory, "versions", versionId, versionId + ".json"), FileMode.Open, FileAccess.Read))
@@ -83,7 +109,7 @@ public partial class MinecraftLauncher
             var versionJsonNode = JsonNode.Parse(versionJsonStream);
             if (versionJsonNode["inheritsFrom"] is { } inheritsFrom)
             {
-                MinecraftLauncher inheritVersion = new((string)inheritsFrom, MinecraftDirectory, null); //TODO: fix login is null
+                MinecraftLauncher inheritVersion = new((string)inheritsFrom, MinecraftDirectory); //TODO: fix login is null
                 await inheritVersion.InstallMinecraft();
             }
             versionJson = DeserializeJson(versionJsonNode, MinecraftDirectory);
@@ -419,7 +445,7 @@ public partial class MinecraftLauncher
             arguments += $" --width {options.CustomResolution?.width} --height {options.CustomResolution?.height}";
         if (options.Demo)
             arguments += " --demo";
-        return ReplaceArguments(arguments.Trim().Split(' ').ToList(), versionJson, minecraftPath, options);
+        return ReplaceArguments([.. arguments.Trim().Split(' ').SkipWhile(string.IsNullOrWhiteSpace)], versionJson, minecraftPath, options);
     }
 
     public record struct Options

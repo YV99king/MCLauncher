@@ -9,9 +9,7 @@ public static class Program
 {
 	public static void Main()
 	{
-        using HttpClientHandler handler = new();
-        handler.AllowAutoRedirect = true;
-        using HttpClient client = new(handler);
+        using HttpClient client = new();
         
         //goto clean;
 
@@ -25,8 +23,8 @@ public static class Program
         minecraftV1_21.InstallMinecraft().Wait();
         var startLaunchTime = DateTime.Now;
         var mcProc = minecraftV1_21.LaunchMinecraft(new());
-        Console.WriteLine($"Installation took: {startLaunchTime - startInstallTime:mm:ss}");
-        Console.WriteLine($"Minecraft launched in {DateTime.Now - startLaunchTime:mm:ss} seconds");
+        Console.WriteLine($"Installation took: {startLaunchTime - startInstallTime:mm\\:ss} minutes.");
+        Console.WriteLine($"Minecraft launched in {DateTime.Now - startLaunchTime:mm\\:ss} minutes.");
         mcProc.WaitForExit();
 
 
